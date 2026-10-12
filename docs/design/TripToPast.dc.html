@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trip to past</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0B5D7A}a:hover{color:#073F53}
+button{font-family:inherit}
+input[type=range]{accent-color:#13201B}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F5F4; font-family: 'Figtree', sans-serif; color: #13201B; display: flex; flex-direction: column; overflow: hidden">
+
+  <header style="display: flex; align-items: center; gap: 10px; padding: 16px 12px 10px 12px">
+    <a href="Main.dc.html" aria-label="Back to family map" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 1px solid #D5DCD9; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13201B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <div style="display: flex; flex-direction: column; gap: 1px">
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800">Dad · last 1 hour</h1>
+      <div style="font-size: 13px; color: #4F5C57">13:32 – 14:32 · Driving · 18 km</div>
+    </div>
+  </header>
+
+  <div style="position: relative; height: 320px; margin: 0 12px; border-radius: 20px; overflow: hidden; border: 1px solid #D5DCD9">
+    <svg width="366" height="320" viewBox="0 0 366 320" aria-hidden="true" style="position: absolute; left: 0; top: 0">
+      <rect width="366" height="320" fill="#E4EAE7"></rect>
+      <rect x="210" y="200" width="120" height="80" rx="10" fill="#D2E3D2"></rect>
+      <path d="M0 176 C 80 160, 150 196, 214 182 S 330 150, 366 160 L 366 190 C 330 182, 280 214, 214 212 S 80 192, 0 206 Z" fill="#C6DAE4"></path>
+      <path d="M0 250 L 366 230" stroke="#FFFFFF" stroke-width="8"></path>
+      <path d="M0 90 L 366 110" stroke="#FFFFFF" stroke-width="6"></path>
+      <path d="M120 0 L 100 320" stroke="#FFFFFF" stroke-width="6"></path>
+      <path d="M260 0 L 280 320" stroke="#FFFFFF" stroke-width="10"></path>
+      <polyline points="36,286 84,240 130,214 176,180 226,134 270,96 314,52" fill="none" stroke="#13201B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+      <polyline points="36,286 84,240 130,214 176,180 226,134 270,96 314,52" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="4 6" stroke-linecap="round"></polyline>
+    </svg>
+
+    <sc-for list="{{pins}}" as="pin" hint-placeholder-count="5">
+      <button onClick="{{pin.pick}}" aria-label="{{pin.aria}}" style="{{pin.style}}">{{pin.n}}</button>
+    </sc-for>
+
+    <div aria-hidden="true" style="{{cursorStyle}}"></div>
+
+    <div style="position: absolute; left: 10px; top: 10px; padding: 6px 10px; border-radius: 10px; background: #FFFFFF; box-shadow: 0 1px 4px rgba(0,0,0,0.15); font-size: 13px; font-weight: 700">{{cursorTime}}</div>
+  </div>
+
+  <div style="padding: 12px 16px 4px 16px; display: flex; flex-direction: column; gap: 4px">
+    <label for="scrub" style="font-size: 13px; font-weight: 600; color: #4F5C57">Drag to replay the last hour</label>
+    <input id="scrub" type="range" min="0" max="6" step="1" value="{{idx}}" onInput="{{onScrub}}" onChange="{{onScrub}}" style="width: 100%; height: 32px; margin: 0">
+    <div style="display: flex; justify-content: space-between; font-size: 12px; color: #4F5C57"><span>13:32</span><span>14:32</span></div>
+  </div>
+
+  <section aria-label="Landmarks along the trail" style="flex: 1 1 auto; overflow-y: auto; padding: 4px 12px 8px 12px; display: flex; flex-direction: column; gap: 6px; min-height: 0">
+    <sc-for list="{{stops}}" as="s" hint-placeholder-count="5">
+      <button onClick="{{s.pick}}" style="{{s.rowStyle}}">
+        <span style="{{s.badgeStyle}}">{{s.n}}</span>
+        <span style="display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0">
+          <span style="font-size: 15px; font-weight: 700">{{s.title}}</span>
+          <span style="font-size: 12px; color: #4F5C57">{{s.detail}}</span>
+        </span>
+        <span style="font-size: 13px; font-weight: 700; color: #3B4743">{{s.time}}</span>
+      </button>
+    </sc-for>
+  </section>
+
+  <div style="display: flex; gap: 10px; padding: 10px 12px 18px 12px; border-top: 1px solid #DDE3E0">
+    <button style="flex: 1 1 0; height: 52px; border-radius: 16px; border: 1px solid #D5DCD9; background: #FFFFFF; font-size: 15px; font-weight: 700; color: #13201B; cursor: pointer">Open in Maps</button>
+    <button style="flex: 1 1 0; height: 52px; border-radius: 16px; border: none; background: #13201B; font-size: 15px; font-weight: 700; color: #FFFFFF; cursor: pointer">Share trail</button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { idx: 6 };
+  }
+  renderVals() {
+    var self = this;
+    var idx = Number(this.state.idx);
+    var pts = [[36, 286], [84, 240], [130, 214], [176, 180], [226, 134], [270, 96], [314, 52]];
+    var times = ['13:32', '13:41', '13:48', '13:55', '14:12', '14:22', '14:32'];
+    var stops = [
+      { i: 0, n: '1', title: 'Left office', detail: 'Started driving', time: '13:32' },
+      { i: 1, n: '2', title: 'Fuel station, Ring Road', detail: 'Stopped 4 min', time: '13:41' },
+      { i: 3, n: '3', title: 'Crossed river bridge', detail: 'Heading north · 46 km/h', time: '13:55' },
+      { i: 4, n: '4', title: 'Passed metro station', detail: 'Slow traffic', time: '14:12' },
+      { i: 6, n: '!', title: 'Impact detected here', detail: 'Near city hospital junction · last known location', time: '14:32' }
+    ];
+    var mapped = stops.map(function (s) {
+      var on = s.i === idx;
+      var alert = s.n === '!';
+      return Object.assign({}, s, {
+        pick: function () { self.setState({ idx: s.i }); },
+        rowStyle: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; border-radius: 14px; text-align: left; cursor: pointer; color: #13201B; background: ' + (on ? '#FFFFFF' : 'transparent') + '; border: ' + (on ? '2px solid #13201B' : '1px solid transparent'),
+        badgeStyle: 'width: 28px; height: 28px; flex: 0 0 auto; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #FFFFFF; background: ' + (alert ? '#C2410C' : '#13201B')
+      });
+    });
+    var pins = stops.map(function (s) {
+      var p = pts[s.i];
+      var alert = s.n === '!';
+      return {
+        n: s.n,
+        aria: s.title + ' at ' + s.time,
+        pick: function () { self.setState({ idx: s.i }); },
+        style: 'position: absolute; left: ' + (p[0] - 14) + 'px; top: ' + (p[1] - 14) + 'px; width: 28px; height: 28px; border-radius: 14px; border: 2px solid #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.25); font-size: 13px; font-weight: 800; color: #FFFFFF; cursor: pointer; padding: 0; background: ' + (alert ? '#C2410C' : '#13201B')
+      };
+    });
+    var c = pts[idx];
+    return {
+      idx: idx,
+      pins: pins,
+      stops: mapped,
+      cursorTime: times[idx] + (idx === 6 ? ' · impact' : ''),
+      cursorStyle: 'position: absolute; left: ' + (c[0] - 22) + 'px; top: ' + (c[1] - 22) + 'px; width: 44px; height: 44px; border-radius: 22px; background: rgba(29,95,209,0.18); border: 3px solid #1D5FD1; box-sizing: border-box; pointer-events: none',
+      onScrub: function (e) { self.setState({ idx: Number(e.target.value) }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

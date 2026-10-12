@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Design tokens (docs/design). Compose colors live in ui/theme/Color.kt; these cover window and icon. -->
+    <color name="window_background">#FFF3F5F4</color>
+    <color name="ic_launcher_background">#FF0E6B57</color>
+</resources>

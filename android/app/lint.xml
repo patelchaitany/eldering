@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- SPEC pins compileSdk/targetSdk 36. The newer AndroidX/OkHttp releases lint suggests require
+         compileSdk 37 (AAR minCompileSdk) and fail checkDebugAarMetadata; see docs/research/android-stack.md. -->
+    <issue id="OldTargetApi" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+</lint>

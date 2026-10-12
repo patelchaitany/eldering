@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Requested at runtime by the permission walkthrough (ui.permissions), each after its explanation;
+         background location only after the prominent disclosure. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Accident SMS to the user's own emergency contacts (debug builds dry-run unless "Allow real SMS" is on). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <!-- Accident countdown over the lock screen (Android 14+: user-grantable in settings). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Lets the walkthrough show the system "stop optimizing battery usage?" dialog for this safety app. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- SEND_SMS would otherwise make telephony mandatory; tablets without SMS can still use the app. -->
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+
+    <!-- Backups are off: the app holds auth tokens, emergency contacts and a location trail
+         that must stay on this device (SPEC: emergency contacts stored on device only). -->
+    <application
+        android:name=".ElderingApp"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Eldering">
+
+        <!-- singleTop: family-alert notifications deliver their incident id through onNewIntent. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

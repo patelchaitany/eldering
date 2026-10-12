@@ -1,0 +1,39 @@
+# Throwaway PostGIS for integration tests (`make test`, or started automatically by
+# internal/testdb when Docker is available). Loopback-only, data on tmpfs, durability
+# turned off for speed. Never used in production.
+name: eldering-test
+
+services:
+  db:
+    image: postgis/postgis:16-3.5-alpine@sha256:47e961a569fd52ff31f0fe205ed91eeab17d9f5fff6722e6d7ea6b588748b293
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres # test-only credential, bound to 127.0.0.1
+      POSTGRES_DB: postgres
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=100
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - jit=off
+    ports:
+      - "127.0.0.1:${ELDERING_TEST_DB_PORT:-55433}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      # TCP check: the entrypoint's temporary init server listens on the socket only,
+      # so this passes only once initdb (incl. PostGIS template) is complete.
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1 -d postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+      start_period: 5s

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sharing & privacy (design: Sharing) -->
+    <string name="sharing_title">Sharing &amp; privacy</string>
+    <string name="sharing_live_title">Share my live location</string>
+    <string name="sharing_hint_on">On — people set to Live can see you on the map.</string>
+    <string name="sharing_hint_paused">Paused until you resume. %s</string>
+    <string name="sharing_hint_paused_until">Paused until %1$s. %2$s</string>
+    <string name="sharing_hint_off">Off — nobody sees your live location. %s</string>
+    <string name="sharing_hint_alerts_work">Accident alerts still work.</string>
+    <string name="sharing_hint_alerts_off">Accident alerts are off too.</string>
+    <string name="sharing_pause_hour">Pause 1 hour</string>
+    <string name="sharing_pause_until_resume">Pause until I resume</string>
+    <string name="sharing_always_alert_title">Always alert on accident</string>
+    <string name="sharing_always_alert_body">Even when sharing is paused, send my location and last 1 hour to people marked below if an accident is detected.</string>
+    <string name="sharing_who_title">Who can see me</string>
+    <string name="sharing_who_hint">You decide, per person</string>
+    <string name="sharing_nobody">No one else in your family yet.</string>
+    <string name="sharing_group_label">What %s can see</string>
+    <string name="sharing_note_app">Family app</string>
+    <string name="sharing_note_sms">SMS only · %s</string>
+    <string name="sharing_add_contact">+ Add emergency contact (SMS only)</string>
+    <string name="sharing_trail_title">Your 1-hour trail</string>
+    <string name="sharing_trail_body">Kept encrypted on this phone only. Uploaded to your family server only during an accident or SOS, and deleted after 72 hours.</string>
+    <string name="sharing_legend_admin">invites or removes members. Cannot see you unless you allow it.</string>
+    <string name="sharing_legend_member">sees people who share with them.</string>
+    <string name="sharing_legend_emergency">no app; gets an SMS with location only when an accident is detected.</string>
+    <string name="sharing_more_settings">Account &amp; app settings</string>
+    <string name="sharing_more_settings_hint">Emergency contacts, permissions, family, sign out</string>
+
+    <!-- Emergency contacts -->
+    <string name="contacts_title">Emergency contacts</string>
+    <string name="contacts_subtitle">SMS only · stored on this phone</string>
+    <string name="contacts_explainer">If an accident is detected or you hold SOS, these people get a text with your location and a live map link. They don\'t need the app. Kept only on this phone.</string>
+    <string name="contacts_empty_title">No emergency contacts yet</string>
+    <string name="contacts_empty_body">Add someone who should get a text if you have an accident, even if they don\'t use the app.</string>
+    <string name="contacts_add">Add contact</string>
+    <string name="contacts_pick">Pick from contacts</string>
+    <string name="contacts_form_add">Add emergency contact</string>
+    <string name="contacts_form_edit">Edit emergency contact</string>
+    <string name="contacts_name">Name</string>
+    <string name="contacts_phone">Phone number</string>
+    <string name="contacts_phone_hint">Include the country code, for example +91</string>
+    <string name="contacts_relation">Relation (optional)</string>
+    <string name="contacts_limit">Up to %d contacts.</string>
+    <string name="contacts_error_name_blank">Enter a name</string>
+    <string name="contacts_error_name_long">Use at most 80 characters</string>
+    <string name="contacts_error_phone">Enter a valid phone number</string>
+    <string name="contacts_error_duplicate">This number is already in your list</string>
+    <string name="contacts_error_too_many">You can add up to 10 contacts</string>
+    <string name="contacts_error_not_found">This contact no longer exists</string>
+    <string name="contacts_sms_on">Gets an SMS if an accident is detected</string>
+    <string name="contacts_sms_off">Paused: won\'t get an SMS</string>
+    <string name="contacts_sms_switch">Send accident SMS to %s</string>
+    <string name="contacts_edit">Edit %s</string>
+    <string name="contacts_remove">Remove %s</string>
+    <string name="contacts_remove_title">Remove %s?</string>
+    <string name="contacts_remove_body">They will no longer get an SMS if an accident is detected.</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_account">Account</string>
+    <string name="settings_sign_out">Sign out</string>
+    <string name="settings_sign_out_title">Sign out of Eldering?</string>
+    <string name="settings_sign_out_body">Family alerts stop on this phone until you log in again. Alerts not yet delivered from this phone are discarded.</string>
+    <string name="settings_family">Family</string>
+    <string name="settings_family_hint">Members, invites, roles</string>
+    <string name="settings_contacts_hint">Who gets an SMS in an emergency</string>
+    <string name="settings_sharing_hint">Who can see you, and when</string>
+    <string name="settings_permissions_hint">Location, notifications, battery</string>
+    <string name="settings_version">Eldering %s</string>
+
+    <!-- Family management -->
+    <string name="family_manage_title">Family</string>
+    <string name="family_manage_you_admin">You\'re an admin</string>
+    <string name="family_manage_you_member">You\'re a member</string>
+    <string name="family_manage_rename">Rename family</string>
+    <string name="family_manage_member_you">%s (you)</string>
+    <string name="family_manage_remove">Remove %s</string>
+    <string name="family_manage_remove_title">Remove %s?</string>
+    <string name="family_manage_remove_body">%s will be removed from the family. You will stop seeing each other right away.</string>
+    <string name="family_manage_leave">Leave family</string>
+    <string name="family_manage_leave_title">Leave %s?</string>
+    <string name="family_manage_leave_body">You will stop seeing this family, and they will stop seeing you, right away.</string>
+    <string name="family_manage_join_another">Join another family</string>
+</resources>

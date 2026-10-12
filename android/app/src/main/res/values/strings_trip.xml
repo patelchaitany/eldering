@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Trip to past -->
+    <string name="trip_title">%s · last 1 hour</string>
+    <string name="trip_range">%1$s – %2$s</string>
+    <string name="trip_scrub_label">Drag to replay the last hour</string>
+    <string name="trip_landmarks_a11y">Landmarks along the trail</string>
+    <string name="trip_impact_suffix">impact</string>
+    <string name="trip_sos_suffix">SOS</string>
+    <string name="trip_landmark_start">Start</string>
+    <string name="trip_landmark_stop">Stopped here</string>
+    <string name="trip_landmark_waypoint">On the way</string>
+    <string name="trip_landmark_end">Latest position</string>
+    <string name="trip_landmark_incident">Impact detected here</string>
+    <string name="trip_landmark_fall">Fall detected here</string>
+    <string name="trip_landmark_sos">SOS sent from here</string>
+    <string name="trip_detail_start">Started here</string>
+    <string name="trip_detail_stopped">Stopped %d min</string>
+    <string name="trip_detail_heading">Heading %s</string>
+    <string name="trip_detail_heading_speed">Heading %1$s · %2$d km/h</string>
+    <string name="trip_detail_passed">Passed here</string>
+    <string name="trip_detail_end">Last known location</string>
+    <string name="trip_detail_incident_place">%s · last known location</string>
+    <string name="trip_pin_a11y">%1$s at %2$s</string>
+    <string name="trip_open_in_maps">Open in Maps</string>
+    <string name="trip_share">Share trail</string>
+    <string name="trip_share_text">%1$s\'s last hour (%2$s–%3$s, %4$s). Last known location at %5$s: %6$s</string>
+    <string name="trip_share_text_me">My last hour (%1$s–%2$s, %3$s). My last known location at %4$s: %5$s</string>
+    <string name="trip_share_text_link">Live location and last hour of %1$s: %2$s</string>
+    <string name="trip_share_text_link_me">My live location and last hour: %1$s</string>
+    <string name="trip_no_trail_title">No trail yet</string>
+    <string name="trip_no_trail_body">Your last hour appears here once protection has been running for a while. It stays on this phone.</string>
+    <string name="trip_not_shared_title">%s\'s trail stays on their phone</string>
+    <string name="trip_not_shared_body">Eldering shares someone\'s last hour only if an accident is detected or they hold SOS.</string>
+</resources>

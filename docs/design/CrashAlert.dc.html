@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accident detected</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FFD7C2}a:hover{color:#FFFFFF}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #1F120C; font-family: 'Figtree', sans-serif; color: #FFFFFF; display: flex; flex-direction: column; padding: 28px 20px 24px 20px; gap: 20px">
+
+  <sc-if value="{{isCounting}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; flex-direction: column; gap: 20px; flex: 1 1 auto">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FDBA8C">Possible accident</div>
+        <h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 800">Are you OK?</h1>
+        <p style="margin: 0; font-size: 15px; line-height: 1.45; color: #F1DCD0">Strong impact, then no movement, while you were walking · 14:32</p>
+      </div>
+
+      <div style="display: flex; align-items: center; justify-content: center; padding: 8px 0">
+        <div role="timer" aria-live="polite" aria-label="{{timerLabel}}" style="width: 188px; height: 188px; border-radius: 94px; border: 10px solid #C2410C; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #2E1A10">
+          <div style="font-size: 72px; font-weight: 800; line-height: 1">{{seconds}}</div>
+          <div style="font-size: 13px; color: #F1DCD0">seconds</div>
+        </div>
+      </div>
+
+      <div style="border-radius: 16px; background: #2E1A10; border: 1px solid #4A2C1C; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+        <div style="font-size: 14px; font-weight: 700">If you don't respond, we'll send:</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #F1DCD0">
+          <div>· Your live location + last 1 hour trail</div>
+          <div>· To Mom, Dad (app + SMS) and 1 emergency contact</div>
+          <div>· SMS works even without mobile data</div>
+        </div>
+      </div>
+
+      <div style="flex: 1 1 auto"></div>
+
+      <button onClick="{{cancel}}" style="height: 72px; border-radius: 20px; border: none; background: #FFFFFF; color: #1F120C; font-size: 22px; font-weight: 800; cursor: pointer">I'm OK</button>
+      <div style="display: flex; gap: 10px">
+        <button onClick="{{sendNow}}" style="flex: 1 1 0; height: 56px; border-radius: 16px; border: none; background: #C2410C; color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer">Send help now</button>
+        <button style="flex: 1 1 0; height: 56px; border-radius: 16px; border: 2px solid #FDBA8C; background: transparent; color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer">Call 112</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isSent}}" hint-placeholder-val="{{false}}">
+    <div style="display: flex; flex-direction: column; gap: 18px; flex: 1 1 auto">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FDBA8C">Help is on the way</div>
+        <h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 800">Your family has been alerted</h1>
+      </div>
+      <div style="border-radius: 16px; background: #2E1A10; border: 1px solid #4A2C1C; padding: 6px 14px; display: flex; flex-direction: column">
+        <sc-for list="{{delivery}}" as="d" hint-placeholder-count="4">
+          <div style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; border-bottom: 1px solid #4A2C1C; font-size: 15px">
+            <span>{{d.who}}</span>
+            <span style="font-size: 13px; font-weight: 700; color: #9BE3C9">{{d.state}}</span>
+          </div>
+        </sc-for>
+      </div>
+      <div style="font-size: 14px; line-height: 1.45; color: #F1DCD0">Sharing live location every 15 s for the next 60 minutes. Last 1 hour trail with landmarks is attached.</div>
+      <div style="flex: 1 1 auto"></div>
+      <button style="height: 64px; border-radius: 18px; border: none; background: #C2410C; color: #FFFFFF; font-size: 20px; font-weight: 800; cursor: pointer">Call 112</button>
+      <button onClick="{{cancel}}" style="height: 56px; border-radius: 16px; border: 2px solid #FFFFFF; background: transparent; color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer">I'm safe now — tell family</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isCancelled}}" hint-placeholder-val="{{false}}">
+    <div style="display: flex; flex-direction: column; gap: 18px; flex: 1 1 auto">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #9BE3C9">Cancelled</div>
+        <h1 style="margin: 0; font-size: 30px; line-height: 1.15; font-weight: 800">Glad you're OK</h1>
+        <p style="margin: 0; font-size: 15px; line-height: 1.45; color: #F1DCD0">Help us get better. What happened?</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <button style="min-height: 56px; border-radius: 16px; border: 1px solid #4A2C1C; background: #2E1A10; color: #FFFFFF; font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; cursor: pointer">Dropped my phone</button>
+        <button style="min-height: 56px; border-radius: 16px; border: 1px solid #4A2C1C; background: #2E1A10; color: #FFFFFF; font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; cursor: pointer">I fell, but I'm fine</button>
+        <button style="min-height: 56px; border-radius: 16px; border: 1px solid #4A2C1C; background: #2E1A10; color: #FFFFFF; font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; cursor: pointer">Minor accident, no help needed</button>
+        <button style="min-height: 56px; border-radius: 16px; border: 1px solid #4A2C1C; background: #2E1A10; color: #FFFFFF; font-size: 16px; font-weight: 600; text-align: left; padding: 0 16px; cursor: pointer">Something else</button>
+      </div>
+      <div style="flex: 1 1 auto"></div>
+      <a href="Main.dc.html" style="height: 56px; border-radius: 16px; background: #FFFFFF; color: #1F120C; font-size: 16px; font-weight: 700; text-decoration: none; display: flex; align-items: center; justify-content: center">Back to family map</a>
+      <button onClick="{{restart}}" style="height: 44px; border: none; background: transparent; color: #FDBA8C; font-size: 14px; font-weight: 600; cursor: pointer">Replay demo</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"startSeconds":{"editor":"int","default":15,"min":5,"max":60},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { left: this.props.startSeconds ?? 15, mode: 'counting' };
+  }
+  componentDidMount() { this.start(); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  start() {
+    var self = this;
+    clearInterval(this.timer);
+    this.timer = setInterval(function () {
+      if (self.state.mode !== 'counting') return;
+      if (self.state.left <= 1) {
+        clearInterval(self.timer);
+        self.setState({ left: 0, mode: 'sent' });
+      } else {
+        self.setState({ left: self.state.left - 1 });
+      }
+    }, 1000);
+  }
+  renderVals() {
+    var self = this;
+    var mode = this.state.mode;
+    return {
+      isCounting: mode === 'counting',
+      isSent: mode === 'sent',
+      isCancelled: mode === 'cancelled',
+      seconds: this.state.left,
+      timerLabel: this.state.left + ' seconds until your family is alerted',
+      cancel: function () { clearInterval(self.timer); self.setState({ mode: 'cancelled' }); },
+      sendNow: function () { clearInterval(self.timer); self.setState({ mode: 'sent', left: 0 }); },
+      restart: function () { self.setState({ mode: 'counting', left: self.props.startSeconds ?? 15 }); self.start(); },
+      delivery: [
+        { who: 'Mom · app', state: 'Seen' },
+        { who: 'Dad · app', state: 'Delivered' },
+        { who: 'Mom, Dad · SMS', state: 'Sent' },
+        { who: 'Emergency contact · SMS', state: 'Sent' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

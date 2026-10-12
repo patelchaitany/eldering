@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Debug builds only. -->
+    <string name="debug_section_title">Debug build</string>
+    <string name="debug_allow_sms">Allow real SMS</string>
+    <string name="debug_allow_sms_off">Off: accident and SOS texts are only logged (dry run).</string>
+    <string name="debug_allow_sms_on">On: accident and SOS texts will really be sent.</string>
+    <string name="debug_allow_sms_confirm_title">Send real SMS?</string>
+    <string name="debug_allow_sms_confirm_body">Real text messages will go to your emergency contacts whenever this debug build sends an accident alert or SOS. Use only with numbers you control.</string>
+    <string name="debug_allow_sms_confirm_yes">Allow real SMS</string>
+</resources>

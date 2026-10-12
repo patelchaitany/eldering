@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>Eldering alert</title>
+{{- if .View}}{{if .View.Active}}
+<link rel="stylesheet" href="{{.MapLibre}}/maplibre-gl.css">{{end}}{{end}}
+<link rel="stylesheet" href="/static/share.css">
+{{- if .View}}
+<script type="module" src="/static/share.js"></script>{{end}}
+</head>
+<body>
+<header class="bar"><span class="brand">Eldering</span><span class="bar-sub">Emergency alert</span></header>
+<main>
+{{- with .View}}
+<section class="status {{if .Active}}status-active{{else}}status-resolved{{end}}" id="status-card" data-active="{{.Active}}">
+  <h1 id="kind">{{.KindLabel}}</h1>
+  <p id="status-label">{{.StatusLabel}}</p>
+  <p class="meta">Detected <time class="ts" datetime="{{iso .DetectedAt}}">{{human .DetectedAt}}</time></p>
+</section>
+{{- if .Active}}
+<div id="map" class="map" role="region" aria-label="Map of the latest location and the trail before the alert"></div>
+<p id="map-note" class="note" hidden></p>
+<section class="card" id="location-card">
+  <h2>Latest location</h2>
+  {{- if .HasLatest}}
+  <p class="coords"><span id="latest-coords">{{.LatestCoords}}</span> <span class="muted" id="latest-acc">{{.LatestAccuracy}}</span></p>
+  <p class="meta">Updated <time class="ts" id="latest-at" datetime="{{iso .LatestAt}}">{{human .LatestAt}}</time> <span class="muted" id="latest-ago"></span></p>
+  <p class="links"><a id="osm-link" href="{{.OSMURL}}" rel="noopener noreferrer" target="_blank">Open in OpenStreetMap</a><a id="geo-link" href="{{.GeoURL}}">Open in maps app</a></p>
+  {{- else}}
+  <p id="latest-coords">No location was available yet. This page refreshes automatically.</p>
+  {{- end}}
+</section>
+<section class="card">
+  <h2>Trip to past</h2>
+  <ol id="landmarks" class="timeline">
+  {{- range .Landmarks}}
+    <li><time class="ts" datetime="{{iso .At}}">{{human .At}}</time><span class="place">{{.Name}}</span></li>
+  {{- else}}
+    <li class="muted">No landmarks recorded.</li>
+  {{- end}}
+  </ol>
+</section>
+{{- end}}
+<p class="fine">This private link expires <time class="ts" datetime="{{iso .ExpiresAt}}">{{human .ExpiresAt}}</time>. Please do not forward it. If someone is in danger, call your local emergency number.</p>
+{{- else}}
+<section class="status status-resolved">
+  <h1>Link unavailable</h1>
+  <p>{{if eq .Status 404}}This alert link is invalid or has expired.{{else}}Something went wrong. Please try again in a moment.{{end}}</p>
+</section>
+{{- end}}
+</main>
+<footer>Map data © OpenStreetMap contributors · Map tiles: OpenFreeMap</footer>
+</body>
+</html>

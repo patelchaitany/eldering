@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Welcome -->
+    <string name="welcome_tagline">Family safety, on every trip.</string>
+    <string name="welcome_point_detect">Notices a fall or a crash while you walk or drive</string>
+    <string name="welcome_point_alert">Alerts your family with where you are and your last hour</string>
+    <string name="welcome_point_privacy">You choose who sees you, and when</string>
+    <string name="welcome_create_account">Create an account</string>
+    <string name="welcome_log_in">I already have an account</string>
+
+    <!-- Register / log in -->
+    <string name="auth_title_register">Create your account</string>
+    <string name="auth_subtitle_register">Takes a minute. Your family joins with a code.</string>
+    <string name="auth_title_login">Welcome back</string>
+    <string name="auth_subtitle_login">Log in to see your family</string>
+    <string name="auth_name">Your name</string>
+    <string name="auth_name_hint">Shown to your family, for example \"Dad\"</string>
+    <string name="auth_email">Email</string>
+    <string name="auth_password">Password</string>
+    <string name="auth_password_hint">At least 8 characters</string>
+    <string name="auth_show_password">Show</string>
+    <string name="auth_hide_password">Hide</string>
+    <string name="auth_submit_register">Create account</string>
+    <string name="auth_submit_login">Log in</string>
+    <string name="auth_switch_to_login">Already have an account? Log in</string>
+    <string name="auth_switch_to_register">New here? Create an account</string>
+    <string name="auth_privacy_note">Your email is used only to sign in. Your location history stays on your phone.</string>
+    <string name="auth_error_name_blank">Enter your name</string>
+    <string name="auth_error_name">Use 1–80 characters</string>
+    <string name="auth_error_email">Enter a valid email address</string>
+    <string name="auth_error_email_taken">An account with this email already exists. Log in instead.</string>
+    <string name="auth_error_password_blank">Enter your password</string>
+    <string name="auth_error_password_length">Use 8–128 characters</string>
+    <string name="auth_error_credentials">Email or password is incorrect.</string>
+
+    <!-- Create or join a family -->
+    <string name="family_setup_title">Your family</string>
+    <string name="family_setup_subtitle">Create a family or join one with a code</string>
+    <string name="family_create_title">Create a family</string>
+    <string name="family_create_body">You\'ll be its admin and get a code to invite others.</string>
+    <string name="family_name_label">Family name</string>
+    <string name="family_name_hint">For example \"Rivera family\"</string>
+    <string name="family_create_action">Create family</string>
+    <string name="family_join_title">Join with a code</string>
+    <string name="family_join_body">Ask a family admin for the 8-character code.</string>
+    <string name="family_code_label">Invite code</string>
+    <string name="family_join_action">Join family</string>
+    <string name="family_error_name_blank">Enter a family name</string>
+    <string name="family_error_name_long">Use at most 80 characters</string>
+    <string name="family_error_code_format">The code has 8 letters and numbers</string>
+    <string name="family_error_code_invalid">That code is wrong, expired or used up. Ask for a new one.</string>
+
+    <!-- Invite code -->
+    <string name="invite_title">Invite family</string>
+    <string name="invite_body">Share this code. Family members enter it in Eldering under \"Join with a code\".</string>
+    <string name="invite_valid_until">Valid for 48 hours, until %s</string>
+    <string name="invite_share">Share code</string>
+    <string name="invite_share_text">Join %1$s on Eldering: open the app, choose \"Join with a code\" and enter %2$s</string>
+    <string name="invite_copy">Copy</string>
+    <string name="invite_copied">Copied</string>
+    <string name="invite_new_code">Make a new code</string>
+    <string name="invite_family_created">Your family is ready. Invite people now, or later from the family map.</string>
+    <string name="invite_no_family_title">You\'re not in a family yet</string>
+    <string name="invite_no_family_body">Create a family first, then invite people.</string>
+    <string name="invite_not_admin_title">Ask an admin</string>
+    <string name="invite_not_admin_body">Only a family admin can invite people. Ask %s for a code.</string>
+    <string name="invite_not_admin_body_generic">Only a family admin can invite people. Ask them for a code.</string>
+</resources>

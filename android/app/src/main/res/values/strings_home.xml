@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_title">Family</string>
+    <string name="home_sharing_count">%1$d of %2$d members sharing</string>
+    <string name="home_notifications">Notifications</string>
+    <string name="home_notifications_active">Notifications: %d active alerts</string>
+    <string name="home_sharing_settings">Sharing and privacy settings</string>
+
+    <string name="home_protection_on">Protection on</string>
+    <string name="home_protection_on_activity">Protection on · %s</string>
+    <string name="home_protection_off">Protection off · tap to fix</string>
+    <string name="home_sharing_on">Sharing my location</string>
+    <string name="home_sharing_paused">Location paused</string>
+    <string name="home_sharing_off">Not sharing location</string>
+    <string name="home_battery_use">Battery use: %s</string>
+    <string name="home_battery_low">low</string>
+    <string name="home_battery_moderate">moderate</string>
+
+    <string name="home_center_on_me">Center on me</string>
+    <string name="home_map_empty">No one is sharing a live location right now</string>
+    <string name="home_marker_a11y">Show %s on the list</string>
+
+    <string name="home_members">Members</string>
+    <string name="home_invite">+ Invite</string>
+    <string name="home_you">You</string>
+    <string name="home_me_initials">ME</string>
+    <string name="home_me_paused">Location paused</string>
+    <string name="home_me_not_sharing">Not sharing</string>
+    <string name="home_me_sharing">Sharing</string>
+    <string name="home_me_no_position">Location not known yet</string>
+    <string name="home_location_known">Location shared</string>
+    <string name="home_near_place">Near %s</string>
+    <string name="home_distance_away">%s away</string>
+    <string name="home_member_no_fix">Sharing</string>
+    <string name="home_member_no_fix_detail">No location reported yet</string>
+    <string name="home_member_paused">Location paused</string>
+    <string name="home_member_paused_detail">Chose not to share right now</string>
+    <string name="home_member_emergency_only">Emergency alerts only</string>
+    <string name="home_member_emergency_only_detail">Shares location only if an accident is detected</string>
+    <string name="home_member_not_sharing">Not sharing with you</string>
+    <string name="home_member_not_sharing_detail">Doesn\'t share their location with you</string>
+    <string name="home_activity_speed">%1$s · %2$d km/h</string>
+    <string name="home_updated_live">Live</string>
+    <string name="home_sharing_short">Sharing</string>
+    <string name="home_last_hour">Last 1 hour</string>
+    <string name="home_last_hour_of">Last 1 hour of %s</string>
+    <string name="home_expand">Show actions</string>
+    <string name="home_collapse">Hide actions</string>
+    <string name="home_no_members">No one else in your family yet. Tap + Invite.</string>
+    <string name="home_no_family">You\'re not in a family yet. Create or join one in Settings.</string>
+
+    <string name="home_alerts_title">Alerts</string>
+    <string name="home_alerts_empty">No alerts right now.</string>
+    <string name="home_own_incident_title">Your family has been alerted and can see where you are.</string>
+
+    <string name="home_sos_idle">Hold 3 s for SOS</string>
+    <string name="home_sos_holding">Keep holding… %d</string>
+    <string name="home_sos_a11y">SOS: press and hold for 3 seconds to alert family and emergency contacts</string>
+    <string name="home_sos_a11y_action">Send SOS</string>
+</resources>

@@ -1,0 +1,24 @@
+# Private / machine-specific — never commit
+SPEC.local.md
+*.local.md
+*.local.json
+.env
+.env.*
+!.env.example
+**/local.properties
+server/deploy/deploy.env
+deploy.env
+docs/screens/
+
+# Build outputs
+build/
+.gradle/
+.kotlin/
+.idea/
+*.iml
+.DS_Store
+*.apk
+*.aab
+*.keystore
+*.jks
+server/dist/

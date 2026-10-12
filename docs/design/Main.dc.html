@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Family map</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0B5D7A}a:hover{color:#073F53}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F5F4; font-family: 'Figtree', sans-serif; color: #13201B; display: flex; flex-direction: column; position: relative; overflow: hidden">
+
+  <header style="display: flex; align-items: center; justify-content: space-between; padding: 18px 16px 8px 16px">
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em">Family</h1>
+      <div style="font-size: 13px; color: #4F5C57">3 of 4 members sharing</div>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <button aria-label="Notifications" style="width: 44px; height: 44px; border-radius: 22px; border: 1px solid #D5DCD9; background: #FFFFFF; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13201B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      </button>
+      <a href="Sharing.dc.html" aria-label="Sharing and privacy settings" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 1px solid #D5DCD9; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13201B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div style="display: flex; gap: 8px; padding: 4px 16px 12px 16px; flex-wrap: wrap">
+    <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #DDEFE8; color: #0B4E3F; font-size: 13px; font-weight: 600">
+      <span style="width: 8px; height: 8px; border-radius: 4px; background: #0E6B57"></span>
+      Protection on · Walking
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #E3ECF8; color: #173F86; font-size: 13px; font-weight: 600">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#173F86" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
+      Sharing my location
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: #ECEFEE; color: #3B4743; font-size: 13px; font-weight: 600">
+      Battery use: low
+    </div>
+  </div>
+
+  <div style="position: relative; height: 300px; margin: 0 12px; border-radius: 20px; overflow: hidden; border: 1px solid #D5DCD9">
+    <svg width="366" height="300" viewBox="0 0 366 300" aria-hidden="true" style="position: absolute; left: 0; top: 0">
+      <rect width="366" height="300" fill="#E4EAE7"></rect>
+      <rect x="28" y="28" width="104" height="72" rx="10" fill="#D2E3D2"></rect>
+      <rect x="236" y="150" width="96" height="62" rx="10" fill="#D2E3D2"></rect>
+      <path d="M0 236 C 70 220, 130 262, 214 246 S 330 214, 366 224 L 366 258 C 330 250, 280 284, 214 282 S 70 256, 0 272 Z" fill="#C6DAE4"></path>
+      <path d="M0 132 L 366 104" stroke="#FFFFFF" stroke-width="14"></path>
+      <path d="M176 0 L 196 300" stroke="#FFFFFF" stroke-width="12"></path>
+      <path d="M0 52 L 366 70" stroke="#FFFFFF" stroke-width="6"></path>
+      <path d="M86 0 L 66 300" stroke="#FFFFFF" stroke-width="6"></path>
+      <path d="M286 0 L 312 300" stroke="#FFFFFF" stroke-width="6"></path>
+      <path d="M0 292 L 366 284" stroke="#FFFFFF" stroke-width="8"></path>
+      <path d="M300 30 C 260 60, 230 100, 196 170" stroke="#0E6B57" stroke-width="4" stroke-dasharray="2 8" stroke-linecap="round" fill="none"></path>
+    </svg>
+
+    <sc-for list="{{markers}}" as="m" hint-placeholder-count="3">
+      <button onClick="{{m.pick}}" aria-label="{{m.aria}}" style="{{m.pos}}">
+        <span style="{{m.avatarStyle}}">{{m.initials}}</span>
+        <span style="padding: 2px 8px; border-radius: 999px; background: #FFFFFF; font-size: 12px; font-weight: 700; color: #13201B; box-shadow: 0 1px 3px rgba(0,0,0,0.18); white-space: nowrap">{{m.name}}</span>
+      </button>
+    </sc-for>
+
+    <button aria-label="Center on me" style="position: absolute; right: 10px; top: 10px; width: 44px; height: 44px; border-radius: 12px; border: none; background: #FFFFFF; box-shadow: 0 1px 4px rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13201B" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+    </button>
+  </div>
+
+  <section aria-label="Family members" style="flex: 1 1 auto; overflow-y: auto; padding: 12px 12px 8px 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0">
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 0 4px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 700">Members</h2>
+      <button style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #D5DCD9; background: #FFFFFF; font-size: 13px; font-weight: 600; color: #13201B; cursor: pointer">+ Invite</button>
+    </div>
+
+    <sc-for list="{{members}}" as="p" hint-placeholder-count="4">
+      <div style="{{p.cardStyle}}">
+        <button onClick="{{p.pick}}" style="display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; border: none; background: transparent; text-align: left; cursor: pointer; color: #13201B">
+          <span style="{{p.avatarStyle}}">{{p.initials}}</span>
+          <span style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0">
+            <span style="font-size: 15px; font-weight: 700">{{p.name}}</span>
+            <span style="{{p.statusStyle}}">{{p.status}}</span>
+            <span style="font-size: 12px; color: #4F5C57; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.place}}</span>
+          </span>
+          <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; color: #4F5C57">
+            <span>{{p.updated}}</span>
+            <span>{{p.battery}}</span>
+          </span>
+        </button>
+        <sc-if value="{{p.showActions}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; gap: 8px; padding: 0 12px 12px 12px">
+            <button style="flex: 1 1 0; height: 44px; border-radius: 12px; border: 1px solid #D5DCD9; background: #FFFFFF; font-size: 14px; font-weight: 600; color: #13201B; cursor: pointer">Call</button>
+            <button style="flex: 1 1 0; height: 44px; border-radius: 12px; border: 1px solid #D5DCD9; background: #FFFFFF; font-size: 14px; font-weight: 600; color: #13201B; cursor: pointer">Directions</button>
+            <a href="TripToPast.dc.html" style="flex: 1.4 1 0; height: 44px; border-radius: 12px; background: #13201B; color: #FFFFFF; font-size: 14px; font-weight: 600; text-decoration: none; display: flex; align-items: center; justify-content: center">Last 1 hour</a>
+          </div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </section>
+
+  <div style="padding: 10px 12px 18px 12px; background: #F3F5F4; border-top: 1px solid #DDE3E0">
+    <a href="CrashAlert.dc.html" aria-label="SOS: press and hold for 3 seconds to alert family and emergency contacts" style="display: flex; align-items: center; justify-content: center; gap: 10px; height: 60px; border-radius: 18px; background: {{sosColor}}; color: #FFFFFF; text-decoration: none; font-size: 18px; font-weight: 800; letter-spacing: 0.02em">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+      Hold 3 s for SOS
+    </a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"sosColor":{"editor":"color","default":"#C2410C","options":["#C2410C","#B91C1C","#13201B"]},"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { selected: 'dad' };
+  }
+  renderVals() {
+    var sel = this.state.selected;
+    var self = this;
+    var people = [
+      { id: 'me', name: 'You', initials: 'ME', color: '#1D5FD1', status: 'Walking', place: 'Near City Park', updated: 'Now', battery: '82%', sharing: true, x: 52, y: 112 },
+      { id: 'dad', name: 'Dad', initials: 'D', color: '#0E6B57', status: 'Driving · 38 km/h', place: 'Ring Road, heading north', updated: 'Live', battery: '41%', sharing: true, x: 170, y: 150 },
+      { id: 'mom', name: 'Mom', initials: 'M', color: '#7A3FB8', status: 'At home', place: 'Home', updated: '2 min ago', battery: '64%', sharing: true, x: 250, y: 30 },
+      { id: 'sis', name: 'Sister', initials: 'S', color: '#6B7672', status: 'Location paused', place: 'She chose not to share right now', updated: '—', battery: '', sharing: false, x: 0, y: 0 }
+    ];
+    var avatar = function (c, size) {
+      return 'width: ' + size + 'px; height: ' + size + 'px; flex: 0 0 auto; border-radius: ' + (size / 2) + 'px; background: ' + c + '; color: #FFFFFF; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center; border: 3px solid #FFFFFF; box-shadow: 0 1px 4px rgba(0,0,0,0.25); box-sizing: border-box';
+    };
+    var members = people.map(function (p) {
+      var on = p.id === sel;
+      return Object.assign({}, p, {
+        pick: function () { self.setState({ selected: p.id }); },
+        showActions: on && p.sharing,
+        avatarStyle: avatar(p.color, 40),
+        statusStyle: 'font-size: 13px; font-weight: 600; color: ' + (p.sharing ? (p.id === 'dad' ? '#0B4E3F' : '#13201B') : '#4F5C57'),
+        cardStyle: 'border-radius: 16px; background: #FFFFFF; border: ' + (on ? '2px solid #13201B' : '1px solid #DDE3E0') + (p.sharing ? '' : '; background: #F7F8F8')
+      });
+    });
+    var markers = people.filter(function (p) { return p.sharing; }).map(function (p) {
+      var on = p.id === sel;
+      return {
+        name: p.name,
+        initials: p.initials,
+        aria: 'Show ' + p.name + ' on the list',
+        pick: function () { self.setState({ selected: p.id }); },
+        pos: 'position: absolute; left: ' + p.x + 'px; top: ' + p.y + 'px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: transparent; border: none; padding: 0; cursor: pointer; z-index: ' + (on ? 3 : 2),
+        avatarStyle: avatar(p.color, on ? 48 : 40) + (on ? '; outline: 3px solid ' + p.color + '; outline-offset: 2px' : '')
+      };
+    });
+    return {
+      members: members,
+      markers: markers,
+      sosColor: this.props.sosColor ?? '#C2410C'
+    };
+  }
+}
+</script>
+</body>
+</html>

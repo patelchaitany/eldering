@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="perm_screen_title">Permissions &amp; battery</string>
+    <string name="perm_step_of">Step %1$d of %2$d</string>
+    <string name="perm_skip_to_summary">Skip</string>
+    <string name="perm_status_done">Allowed</string>
+    <string name="perm_status_needed">Needed</string>
+    <string name="perm_status_recommended">Recommended</string>
+    <string name="perm_status_blocked">Allow location first</string>
+    <string name="perm_summary_ready">You\'re protected. Review this any time.</string>
+    <string name="perm_summary_missing">Some permissions are still missing</string>
+    <string name="perm_go_to_map">Go to family map</string>
+    <string name="perm_allow">Allow</string>
+    <string name="perm_not_now">Not now</string>
+    <string name="perm_open_settings">Open settings</string>
+    <string name="perm_blocked_hint">Android won\'t ask again. Open settings, then allow it under Permissions.</string>
+
+    <string name="perm_location_title">Location</string>
+    <string name="perm_location_body">Eldering uses your precise location to know where an accident happened and to show you on the map to the people you choose. Choose \"Precise\" and \"While using the app\".</string>
+    <string name="perm_location_action">Allow location</string>
+
+    <!-- Prominent disclosure: shown in full, on its own page, before ACCESS_BACKGROUND_LOCATION is requested. -->
+    <string name="perm_background_title">Location all the time</string>
+    <string name="perm_background_disclosure_title">Eldering uses your location in the background</string>
+    <string name="perm_background_disclosure">Eldering collects location data even when the app is closed or not in use, to:\n• detect accidents and falls while you walk or drive,\n• keep your last hour of trail on this phone for \"Trip to past\",\n• share your live location with the family members you allow, and send your location if an accident is detected or you hold SOS.\n\nYour trail stays on this phone. It is uploaded only during an accident or SOS and deleted from the server after 72 hours. You can pause or turn off sharing at any time.</string>
+    <string name="perm_background_body">On the next screen, choose \"Allow all the time\". Without it, Eldering can\'t help while your phone is in your pocket.</string>
+    <string name="perm_background_action">Continue</string>
+
+    <string name="perm_activity_title">Physical activity</string>
+    <string name="perm_activity_body">Lets Eldering tell walking from driving, so it uses the right accident checks and saves battery while you\'re still.</string>
+
+    <string name="perm_notifications_title">Notifications</string>
+    <string name="perm_notifications_body">The \"Are you OK?\" countdown and your family\'s accident alerts arrive as notifications.</string>
+
+    <string name="perm_sms_title">Send SMS</string>
+    <string name="perm_sms_body">If an accident is detected, Eldering texts your emergency contacts your location, even without mobile data. It never texts anyone else and never places calls.</string>
+
+    <string name="perm_fullscreen_title">Alerts on the lock screen</string>
+    <string name="perm_fullscreen_body">Lets the accident countdown fill the screen even when your phone is locked. On the next screen, allow full-screen notifications for Eldering.</string>
+
+    <string name="perm_battery_title">Run in the background</string>
+    <string name="perm_battery_body">Android may pause apps to save battery. Allow Eldering to keep running so it can notice an accident at any time. It is built to use little battery.</string>
+
+    <string name="perm_oem_title">OnePlus battery settings</string>
+    <string name="perm_oem_body">OnePlus phones can stop safety apps in the background. Please do these three things once:</string>
+    <string name="perm_oem_step1">Open App info → Battery and choose \"Allow background activity\" (or \"Don\'t optimize\").</string>
+    <string name="perm_oem_step2">Turn on \"Auto launch\" for Eldering.</string>
+    <string name="perm_oem_step3">Open Recent apps, tap the menu on Eldering\'s card and choose \"Lock\".</string>
+    <string name="perm_oem_app_info">Open App info</string>
+    <string name="perm_oem_auto_launch">Open Auto launch</string>
+    <string name="perm_oem_done">I\'ve done this</string>
+</resources>

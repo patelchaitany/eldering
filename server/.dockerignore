@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+dist/
+deploy/
+*.md
+docker-compose*.yml
+Makefile
+**/*_test.go
+internal/testdb/
+e2e/

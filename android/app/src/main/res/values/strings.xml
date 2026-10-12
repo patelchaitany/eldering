@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Eldering</string>
+
+    <!-- Common actions -->
+    <string name="action_back">Back</string>
+    <string name="action_back_to_map">Back to family map</string>
+    <string name="action_call">Call</string>
+    <string name="action_call_person">Call %s</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_directions">Directions</string>
+    <string name="action_directions_to">Directions to %s</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_done">Done</string>
+    <string name="action_next">Next</string>
+    <string name="action_open">Open</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_save">Save</string>
+
+    <!-- Errors -->
+    <string name="error_network">Can\'t reach the Eldering server. Check your connection and try again.</string>
+    <string name="error_signed_out">You\'ve been signed out. Please log in again.</string>
+    <string name="error_forbidden">You\'re not allowed to do that.</string>
+    <string name="error_not_found">That no longer exists or isn\'t shared with you.</string>
+    <string name="error_server">The server had a problem. Try again in a moment.</string>
+    <string name="error_unexpected">Something went wrong. Try again.</string>
+    <plurals name="error_rate_limited">
+        <item quantity="one">Too many attempts. Try again in %d minute.</item>
+        <item quantity="other">Too many attempts. Try again in %d minutes.</item>
+    </plurals>
+
+    <!-- Movement -->
+    <string name="activity_still">Not moving</string>
+    <string name="activity_walking">Walking</string>
+    <string name="activity_running">Running</string>
+    <string name="activity_cycling">Cycling</string>
+    <string name="activity_vehicle">Driving</string>
+    <string name="activity_unknown">Sharing location</string>
+
+    <string name="direction_north">north</string>
+    <string name="direction_northeast">northeast</string>
+    <string name="direction_east">east</string>
+    <string name="direction_southeast">southeast</string>
+    <string name="direction_south">south</string>
+    <string name="direction_southwest">southwest</string>
+    <string name="direction_west">west</string>
+    <string name="direction_northwest">northwest</string>
+
+    <!-- Units and ages -->
+    <string name="age_now">Now</string>
+    <plurals name="age_minutes">
+        <item quantity="one">%d min ago</item>
+        <item quantity="other">%d min ago</item>
+    </plurals>
+    <plurals name="age_hours">
+        <item quantity="one">%d h ago</item>
+        <item quantity="other">%d h ago</item>
+    </plurals>
+    <string name="distance_km_whole">%d km</string>
+    <string name="distance_km_decimal">%s km</string>
+    <string name="distance_m">%d m</string>
+    <string name="percent">%d%%</string>
+
+    <!-- Roles and sharing levels -->
+    <string name="role_admin">Admin</string>
+    <string name="role_member">Member</string>
+    <string name="role_emergency">Emergency</string>
+    <string name="level_live">Live</string>
+    <string name="level_emergency">Emergency only</string>
+    <string name="level_off">Off</string>
+
+    <!-- Incident wording shared by Home, the family alert and Trip to past -->
+    <string name="incident_headline_accident">%s may have been in an accident</string>
+    <string name="incident_headline_fall">%s may have fallen</string>
+    <string name="incident_headline_sos">%s pressed SOS</string>
+    <string name="detected_vehicle_crash">Hard impact while driving</string>
+    <string name="detected_pedestrian_impact">Strong impact while walking</string>
+    <string name="detected_fall_walking">Fall while walking</string>
+    <string name="detected_fall">Fall, then no movement</string>
+    <string name="detected_sos">SOS button held</string>
+</resources>

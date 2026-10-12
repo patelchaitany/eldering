@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sharing and privacy</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#0B5D7A}a:hover{color:#073F53}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F5F4; font-family: 'Figtree', sans-serif; color: #13201B; display: flex; flex-direction: column; overflow: hidden">
+
+  <header style="display: flex; align-items: center; gap: 10px; padding: 16px 12px 10px 12px">
+    <a href="Main.dc.html" aria-label="Back to family map" style="width: 44px; height: 44px; box-sizing: border-box; border-radius: 22px; border: 1px solid #D5DCD9; background: #FFFFFF; display: flex; align-items: center; justify-content: center">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#13201B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
+    </a>
+    <h1 style="margin: 0; font-size: 20px; font-weight: 800">Sharing &amp; privacy</h1>
+  </header>
+
+  <div style="flex: 1 1 auto; overflow-y: auto; padding: 4px 12px 20px 12px; display: flex; flex-direction: column; gap: 14px; min-height: 0">
+
+    <section style="border-radius: 16px; background: #FFFFFF; border: 1px solid #DDE3E0; padding: 14px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <div style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto">
+          <h2 style="margin: 0; font-size: 16px; font-weight: 700">Share my live location</h2>
+          <div style="font-size: 13px; line-height: 1.4; color: #4F5C57">{{shareHint}}</div>
+        </div>
+        <button onClick="{{toggleShare}}" aria-pressed="{{shareOn}}" aria-label="Share my live location" style="{{shareSwitch}}"><span style="{{shareKnob}}"></span></button>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <button onClick="{{pauseHour}}" style="flex: 1 1 0; height: 44px; border-radius: 12px; border: 1px solid #D5DCD9; background: #F7F8F8; font-size: 14px; font-weight: 600; color: #13201B; cursor: pointer">Pause 1 hour</button>
+        <button onClick="{{pauseOff}}" style="flex: 1 1 0; height: 44px; border-radius: 12px; border: 1px solid #D5DCD9; background: #F7F8F8; font-size: 14px; font-weight: 600; color: #13201B; cursor: pointer">Pause until I resume</button>
+      </div>
+    </section>
+
+    <section style="border-radius: 16px; background: #FFFFFF; border: 1px solid #DDE3E0; padding: 14px; display: flex; align-items: center; gap: 12px">
+      <div style="display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 700">Always alert on accident</h2>
+        <div style="font-size: 13px; line-height: 1.4; color: #4F5C57">Even when sharing is paused, send my location and last 1 hour to people marked below if an accident is detected.</div>
+      </div>
+      <button onClick="{{toggleEmergency}}" aria-pressed="{{emergencyOn}}" aria-label="Always alert on accident" style="{{emSwitch}}"><span style="{{emKnob}}"></span></button>
+    </section>
+
+    <section aria-label="Who can see me" style="display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 700">Who can see me</h2>
+        <span style="font-size: 12px; color: #4F5C57">You decide, per person</span>
+      </div>
+      <sc-for list="{{people}}" as="p" hint-placeholder-count="4">
+        <div style="border-radius: 16px; background: #FFFFFF; border: 1px solid #DDE3E0; padding: 12px; display: flex; flex-direction: column; gap: 10px">
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span style="{{p.avatarStyle}}">{{p.initials}}</span>
+            <span style="display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto">
+              <span style="font-size: 15px; font-weight: 700">{{p.name}}</span>
+              <span style="font-size: 12px; color: #4F5C57">{{p.roleNote}}</span>
+            </span>
+            <span style="{{p.roleStyle}}">{{p.role}}</span>
+          </div>
+          <div role="group" aria-label="{{p.groupLabel}}" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: #ECEFEE">
+            <sc-for list="{{p.levels}}" as="lv" hint-placeholder-count="3">
+              <button onClick="{{lv.pick}}" aria-pressed="{{lv.on}}" disabled="{{lv.disabled}}" style="{{lv.style}}">{{lv.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+      <button style="height: 48px; border-radius: 14px; border: 1px dashed #A9B4B0; background: transparent; font-size: 14px; font-weight: 700; color: #13201B; cursor: pointer">+ Add emergency contact (SMS only)</button>
+    </section>
+
+    <section style="border-radius: 16px; background: #E9EEF5; padding: 14px; display: flex; flex-direction: column; gap: 6px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 700; color: #173F86">Your 1-hour trail</h2>
+      <div style="font-size: 13px; line-height: 1.45; color: #22385F">Kept encrypted on this phone only. Uploaded to your family server only during an accident or SOS, and deleted after 72 hours.</div>
+    </section>
+
+    <section style="display: flex; flex-direction: column; gap: 6px; padding: 0 4px; font-size: 12px; line-height: 1.45; color: #4F5C57">
+      <div><strong style="color: #13201B">Admin</strong> — invites or removes members. Cannot see you unless you allow it.</div>
+      <div><strong style="color: #13201B">Member</strong> — sees people who share with them.</div>
+      <div><strong style="color: #13201B">Emergency contact</strong> — no app; gets an SMS with location only when an accident is detected.</div>
+    </section>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      share: 'on',
+      emergency: true,
+      levels: { mom: 'live', dad: 'live', sis: 'emergency', uncle: 'emergency' }
+    };
+  }
+  sw(on) {
+    return {
+      track: 'width: 52px; height: 32px; flex: 0 0 auto; border-radius: 16px; border: none; padding: 3px; cursor: pointer; display: flex; justify-content: ' + (on ? 'flex-end' : 'flex-start') + '; background: ' + (on ? '#0E6B57' : '#A9B4B0'),
+      knob: 'width: 26px; height: 26px; border-radius: 13px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(0,0,0,0.25)'
+    };
+  }
+  renderVals() {
+    var self = this;
+    var st = this.state;
+    var shareOn = st.share === 'on';
+    var s1 = this.sw(shareOn);
+    var s2 = this.sw(st.emergency);
+    var people = [
+      { id: 'mom', name: 'Mom', initials: 'M', color: '#7A3FB8', role: 'Admin', roleNote: 'Family app' },
+      { id: 'dad', name: 'Dad', initials: 'D', color: '#0E6B57', role: 'Member', roleNote: 'Family app' },
+      { id: 'sis', name: 'Sister', initials: 'S', color: '#6B7672', role: 'Member', roleNote: 'Family app' },
+      { id: 'uncle', name: 'Uncle', initials: 'U', color: '#8A5A12', role: 'Emergency', roleNote: 'SMS only · +91 ••••• ••210', smsOnly: true }
+    ];
+    var opts = [
+      { key: 'live', label: 'Live' },
+      { key: 'emergency', label: 'Emergency only' },
+      { key: 'off', label: 'Off' }
+    ];
+    var mapped = people.map(function (p) {
+      var cur = st.levels[p.id];
+      return Object.assign({}, p, {
+        groupLabel: 'What ' + p.name + ' can see',
+        avatarStyle: 'width: 36px; height: 36px; flex: 0 0 auto; border-radius: 18px; background: ' + p.color + '; color: #FFFFFF; font-size: 14px; font-weight: 800; display: flex; align-items: center; justify-content: center',
+        roleStyle: 'padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 700; background: ' + (p.role === 'Admin' ? '#EFE6F8' : p.role === 'Emergency' ? '#F7ECDD' : '#ECEFEE') + '; color: ' + (p.role === 'Admin' ? '#5A2C8C' : p.role === 'Emergency' ? '#6B4410' : '#3B4743'),
+        levels: opts.map(function (o) {
+          var on = cur === o.key;
+          var disabled = !!(p.smsOnly && o.key === 'live');
+          return {
+            label: o.label,
+            on: on,
+            disabled: disabled,
+            pick: function () {
+              if (disabled) return;
+              var next = Object.assign({}, self.state.levels);
+              next[p.id] = o.key;
+              self.setState({ levels: next });
+            },
+            style: 'min-height: 40px; border-radius: 9px; border: none; font-size: 13px; font-weight: 700; cursor: ' + (disabled ? 'not-allowed' : 'pointer') + '; background: ' + (on ? '#13201B' : 'transparent') + '; color: ' + (on ? '#FFFFFF' : disabled ? '#8A9590' : '#13201B')
+          };
+        })
+      });
+    });
+    return {
+      shareOn: shareOn,
+      emergencyOn: st.emergency,
+      shareHint: st.share === 'on' ? 'On — people set to Live can see you on the map.' : st.share === 'hour' ? 'Paused for 1 hour. Accident alerts still work.' : 'Paused until you resume. Accident alerts still work.',
+      shareSwitch: s1.track,
+      shareKnob: s1.knob,
+      emSwitch: s2.track,
+      emKnob: s2.knob,
+      toggleShare: function () { self.setState({ share: shareOn ? 'off' : 'on' }); },
+      pauseHour: function () { self.setState({ share: 'hour' }); },
+      pauseOff: function () { self.setState({ share: 'off' }); },
+      toggleEmergency: function () { self.setState({ emergency: !self.state.emergency }); },
+      people: mapped
+    };
+  }
+}
+</script>
+</body>
+</html>

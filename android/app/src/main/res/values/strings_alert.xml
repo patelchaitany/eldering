@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accident countdown (design: CrashAlert). Overlines are upper-cased in code. -->
+    <string name="alert_overline_possible">Possible accident</string>
+    <string name="alert_overline_sos">SOS</string>
+    <string name="alert_overline_sent">Help is on the way</string>
+    <string name="alert_overline_cancelled">Cancelled</string>
+    <string name="alert_are_you_ok">Are you OK?</string>
+    <string name="alert_what_vehicle">Hard impact while you were driving · %s</string>
+    <string name="alert_what_walking">Strong impact, then no movement, while you were walking · %s</string>
+    <string name="alert_what_fall">A fall, then no movement · %s</string>
+    <string name="alert_what_sos">You held the SOS button · %s</string>
+    <string name="alert_seconds">seconds</string>
+    <plurals name="alert_timer_a11y">
+        <item quantity="one">%d second until your family is alerted</item>
+        <item quantity="other">%d seconds until your family is alerted</item>
+    </plurals>
+    <string name="alert_will_send">If you don\'t respond, we\'ll send:</string>
+    <string name="alert_will_send_location">Your live location + last 1 hour trail</string>
+    <string name="alert_to_family_and_contacts">To %1$s (app) and %2$s (SMS)</string>
+    <string name="alert_to_family">To %s (app)</string>
+    <string name="alert_to_contacts">To %s (SMS)</string>
+    <string name="alert_to_family_generic">To family members who receive your alerts</string>
+    <plurals name="alert_emergency_contacts">
+        <item quantity="one">%d emergency contact</item>
+        <item quantity="other">%d emergency contacts</item>
+    </plurals>
+    <string name="alert_will_send_sms_offline">SMS works even without mobile data</string>
+    <string name="alert_im_ok">I\'m OK</string>
+    <string name="alert_send_now">Send help now</string>
+    <string name="alert_call_emergency">Call 112</string>
+    <string name="alert_call_emergency_a11y">Call 112: opens the dialer with 112 filled in</string>
+
+    <string name="alert_family_alerted">Your family has been alerted</string>
+    <string name="alert_delivery_app">%s · app</string>
+    <string name="alert_delivery_sms">%s · SMS</string>
+    <string name="alert_delivery_family_app">Family · app</string>
+    <string name="alert_delivery_contacts_sms">Emergency contacts · SMS</string>
+    <string name="alert_sharing_live">Sharing live location every 15 s for the next 60 minutes. Last 1 hour trail with landmarks is attached.</string>
+    <string name="alert_safe_now">I\'m safe now — tell family</string>
+
+    <string name="alert_glad_ok">Glad you\'re OK</string>
+    <string name="alert_what_happened">Help us get better. What happened?</string>
+    <string name="alert_sos_resolved">We\'ve told your family you\'re safe.</string>
+    <string name="alert_feedback_thanks">Thanks — saved on this phone only.</string>
+    <string name="alert_back_to_map">Back to family map</string>
+
+    <string name="feedback_dropped_phone">Dropped my phone</string>
+    <string name="feedback_fell_fine">I fell, but I\'m fine</string>
+    <string name="feedback_minor_accident">Minor accident, no help needed</string>
+    <string name="feedback_something_else">Something else</string>
+
+    <string name="delivery_sending">Sending…</string>
+    <string name="delivery_sent">Sent</string>
+    <string name="delivery_delivered">Delivered</string>
+    <string name="delivery_seen">Seen</string>
+    <string name="delivery_on_the_way">On the way</string>
+    <string name="delivery_dry_run">Test mode, not sent</string>
+    <string name="delivery_not_sent">Not sent</string>
+    <string name="delivery_failed">Failed</string>
+
+    <!-- What family sees (design: FamilyAlert) -->
+    <string name="family_alert_title_generic">Family alert</string>
+    <string name="family_alert_overline">Accident alert</string>
+    <string name="family_alert_overline_sos">SOS alert</string>
+    <string name="family_alert_minutes_ago">%d min ago</string>
+    <string name="family_alert_status_no_response">%s hasn\'t responded</string>
+    <string name="family_alert_status_you_on_way">You\'re on your way</string>
+    <string name="family_alert_status_ok">%s is OK</string>
+    <string name="family_alert_status_handled">Handled</string>
+    <string name="family_alert_last_known">Last known location</string>
+    <string name="family_alert_live">Live</string>
+    <string name="family_alert_updated_seconds">updated %d s ago</string>
+    <string name="family_alert_updated_minutes">updated %d min ago</string>
+    <string name="family_alert_accuracy">accurate to %d m</string>
+    <string name="family_alert_battery">phone battery %d%%</string>
+    <string name="family_alert_call_person">Call %s</string>
+    <string name="family_alert_see_last_hour">See last 1 hour</string>
+    <string name="family_alert_detected">Detected</string>
+    <string name="family_alert_speed_before">Speed before</string>
+    <string name="family_alert_speed_change">%1$d km/h → %2$d</string>
+    <string name="family_alert_also_alerted">Also alerted</string>
+    <string name="family_alert_on_my_way">I\'m going there</string>
+    <string name="family_alert_on_my_way_done">On your way</string>
+    <string name="family_alert_is_safe">%s is safe</string>
+    <string name="family_alert_resolved_handled">Marked as handled — family has been told</string>
+    <string name="family_alert_resolved_ok">%s said they\'re OK — alert closed</string>
+    <string name="family_alert_resolved_cancelled">%s cancelled the alert</string>
+    <string name="family_alert_confirm_safe_title">Mark %s as safe?</string>
+    <string name="family_alert_confirm_safe_body">This tells everyone in the family that %s is safe and ends the alert.</string>
+    <string name="family_alert_confirm_safe_yes">Yes, mark safe</string>
+</resources>

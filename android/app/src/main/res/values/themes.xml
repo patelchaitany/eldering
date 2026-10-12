@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Platform window theme only; all UI styling is in Compose (ui/theme). No AppCompat dependency. -->
+    <style name="Theme.Eldering" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>
