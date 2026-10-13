@@ -3,6 +3,7 @@ package com.eldering.safety.debug
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eldering.safety.R
 import com.eldering.safety.core.appGraph
+import com.eldering.safety.ui.components.DesignButton
+import com.eldering.safety.ui.components.DesignButtons
 import com.eldering.safety.ui.components.DesignCard
 import com.eldering.safety.ui.components.DesignSwitch
 import com.eldering.safety.ui.theme.Eldering
@@ -61,6 +64,14 @@ fun DebugSettingsSection(modifier: Modifier = Modifier) {
                 contentDescription = stringResource(R.string.debug_allow_sms),
             )
         }
+        val context = LocalContext.current
+        DesignButton(
+            text = stringResource(R.string.debug_open_gallery),
+            onClick = { context.startActivity(UiGalleryActivity.intent(context)) },
+            colors = DesignButtons.outline(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(stringResource(R.string.debug_open_gallery_hint), style = Eldering.type.caption, color = Eldering.palette.inkMuted)
     }
     if (confirm) {
         AlertDialog(

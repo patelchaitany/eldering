@@ -18,6 +18,16 @@
     <!-- Lets the walkthrough show the system "stop optimizing battery usage?" dialog for this safety app. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Background protection (SafetyService): docs/research/android-background.md §2. specialUse: continuous
+         on-device accident detection; location: the trail and live sharing. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Accident countdown alarm vibration. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- SEND_SMS would otherwise make telephony mandatory; tablets without SMS can still use the app. -->
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
@@ -45,5 +55,50 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Accident countdown over the lock screen (full-screen-intent target). Never dismisses the keyguard:
+             "I'm OK" must work without unlocking. Own task so it never drags the family map along. -->
+        <activity
+            android:name=".alert.AccidentAlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity="com.eldering.safety.alert"
+            android:turnScreenOn="true" />
+
+        <service
+            android:name=".service.SafetyService"
+            android:exported="false"
+            android:foregroundServiceType="location|specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Continuous on-device accident detection (vehicle crash, fall, pedestrian impact) from the accelerometer and gyroscope while the user has protection switched on. On detection it shows a cancellable countdown, then alerts the user's chosen family members and emergency contacts. If it is interrupted, a crash or fall goes unreported." />
+        </service>
+
+        <!-- PendingIntent target for Play services Activity Recognition (runs as our uid: not exported). -->
+        <receiver
+            android:name=".service.ActivityTransitionReceiver"
+            android:exported="false" />
+
+        <!-- Protected system actions only (the receiver checks the action). -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".service.HeartbeatAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".alert.AlertActionReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".alert.SmsStatusReceiver"
+            android:exported="false" />
     </application>
 </manifest>

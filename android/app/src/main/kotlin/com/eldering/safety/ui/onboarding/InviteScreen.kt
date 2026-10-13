@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,7 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.eldering.safety.R
 import com.eldering.safety.ui.common.appViewModel
 import com.eldering.safety.ui.common.asString
-import com.eldering.safety.ui.common.rememberClock
+import com.eldering.safety.ui.common.dateTimeText
 import com.eldering.safety.ui.components.DesignButton
 import com.eldering.safety.ui.components.DesignButtons
 import com.eldering.safety.ui.components.DesignCard
@@ -81,9 +82,9 @@ fun InviteScreen(
     onRetry: () -> Unit,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val clock = rememberClock()
     var copied by remember { mutableStateOf(false) }
     Column(
         Modifier
@@ -126,7 +127,7 @@ fun InviteScreen(
                             )
                             if (state.expiresAtMs > 0) {
                                 Text(
-                                    stringResource(R.string.invite_valid_until, clock(state.expiresAtMs)),
+                                    stringResource(R.string.invite_valid_until, dateTimeText(state.expiresAtMs)),
                                     style = Eldering.type.caption,
                                     color = Eldering.palette.inkMuted,
                                     textAlign = TextAlign.Center,
@@ -140,8 +141,8 @@ fun InviteScreen(
                                     onClick = {
                                         ExternalIntents.shareText(
                                             context,
-                                            context.getString(R.string.invite_share_text, state.familyName.orEmpty(), shown),
-                                            context.getString(R.string.invite_share),
+                                            resources.getString(R.string.invite_share_text, state.familyName.orEmpty(), shown),
+                                            resources.getString(R.string.invite_share),
                                         )
                                     },
                                     modifier = Modifier.weight(1f),
@@ -150,9 +151,10 @@ fun InviteScreen(
                                     text = stringResource(if (copied) R.string.invite_copied else R.string.invite_copy),
                                     leadingIcon = if (copied) ElderingIcons.Check else ElderingIcons.Copy,
                                     colors = DesignButtons.outline(),
+                                    contentDescription = stringResource(if (copied) R.string.invite_copied else R.string.invite_copy_a11y),
                                     onClick = {
                                         scope.launch {
-                                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Eldering invite", code)))
+                                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(resources.getString(R.string.invite_clip_label), code)))
                                             copied = true
                                         }
                                     },

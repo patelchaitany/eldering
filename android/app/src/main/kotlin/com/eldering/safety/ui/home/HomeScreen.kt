@@ -20,10 +20,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -41,7 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -111,7 +115,7 @@ fun HomeRoute(onNavigate: (Route) -> Unit) {
             onNavigate = onNavigate,
             onSos = { onNavigate(Route.Sos) },
             onResolveOwn = viewModel::resolveOwnIncident,
-            onDismissError = viewModel::dismissError,
+            onRetry = viewModel::retry,
         ),
     )
 }
@@ -122,7 +126,7 @@ class HomeActions(
     val onNavigate: (Route) -> Unit,
     val onSos: () -> Unit,
     val onResolveOwn: () -> Unit,
-    val onDismissError: () -> Unit,
+    val onRetry: () -> Unit,
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -158,8 +162,8 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions) {
                     item("error") {
                         ErrorBanner(
                             error.asString(),
-                            actionLabel = stringResource(R.string.action_dismiss),
-                            onAction = actions.onDismissError,
+                            actionLabel = stringResource(R.string.action_retry),
+                            onAction = actions.onRetry,
                             modifier = Modifier.padding(horizontal = 12.dp),
                         )
                     }
@@ -195,6 +199,7 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions) {
                             height = 36.dp,
                             shape = RoundedCornerShape(18.dp),
                             textStyle = Eldering.type.captionStrong,
+                            contentDescription = stringResource(R.string.home_invite_a11y),
                         )
                     }
                 }
@@ -202,14 +207,30 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions) {
                 items(state.members, key = { it.userId }) { member ->
                     MemberCard(member, state.nowMs, selected = state.selectedId == member.userId, actions = actions)
                 }
+                if (state.loading && state.members.isEmpty()) {
+                    item("loading") { MembersLoading() }
+                }
                 if (!state.loading && state.members.isEmpty()) {
                     item("empty") {
-                        Text(
-                            stringResource(if (state.hasFamily) R.string.home_no_members else R.string.home_no_family),
-                            style = Eldering.type.caption,
-                            color = palette.inkMuted,
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        )
+                        ) {
+                            Text(
+                                stringResource(if (state.hasFamily) R.string.home_no_members else R.string.home_no_family),
+                                style = Eldering.type.caption,
+                                color = palette.inkMuted,
+                            )
+                            if (!state.hasFamily) {
+                                DesignButton(
+                                    stringResource(R.string.home_no_family_action),
+                                    { actions.onNavigate(Route.FamilySetup(canGoBack = true)) },
+                                    colors = DesignButtons.outline(),
+                                    height = 48.dp,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -220,10 +241,10 @@ fun HomeScreen(state: HomeUiState, actions: HomeActions) {
                 .background(palette.ground),
         ) {
             HorizontalDivider(color = palette.divider)
-            val context = LocalContext.current
+            val resources = LocalResources.current
             HoldToConfirmButton(
                 idleLabel = stringResource(R.string.home_sos_idle),
-                holdingLabel = { context.getString(R.string.home_sos_holding, it) },
+                holdingLabel = { resources.getString(R.string.home_sos_holding, it) },
                 accessibilityLabel = stringResource(R.string.home_sos_a11y),
                 accessibilityActionLabel = stringResource(R.string.home_sos_a11y_action),
                 onConfirmed = actions.onSos,
@@ -257,11 +278,14 @@ private fun HomeHeader(state: HomeUiState, onAlerts: () -> Unit, onSharing: () -
                 color = Eldering.palette.ink,
                 modifier = Modifier.semantics { heading() },
             )
-            Text(
-                stringResource(R.string.home_sharing_count, state.sharingCount, state.totalCount),
-                style = Eldering.type.caption,
-                color = Eldering.palette.inkMuted,
-            )
+            // Unknown until the first refresh: "0 of 1 members sharing" would be wrong, so say nothing yet.
+            if (!state.loading || state.members.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.home_sharing_count, state.sharingCount, state.totalCount),
+                    style = Eldering.type.caption,
+                    color = Eldering.palette.inkMuted,
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             IconCircleButton(
@@ -269,7 +293,7 @@ private fun HomeHeader(state: HomeUiState, onAlerts: () -> Unit, onSharing: () -
                 contentDescription = if (state.familyAlerts.isEmpty()) {
                     stringResource(R.string.home_notifications)
                 } else {
-                    stringResource(R.string.home_notifications_active, state.familyAlerts.size)
+                    pluralStringResource(R.plurals.home_notifications_active, state.familyAlerts.size, state.familyAlerts.size)
                 },
                 onClick = onAlerts,
                 badge = state.familyAlerts.isNotEmpty(),
@@ -365,7 +389,14 @@ private fun FamilyMapCard(state: HomeUiState, height: androidx.compose.ui.unit.D
             .clip(RoundedCornerShape(20.dp))
             .border(1.dp, palette.hairline, RoundedCornerShape(20.dp)),
     ) {
-        ElderingMap(lines = emptyList(), markers = markers, camera = state.camera, modifier = Modifier.fillMaxSize())
+        ElderingMap(
+            lines = emptyList(),
+            markers = markers,
+            camera = state.camera,
+            // Room for the name label under each avatar, the "center on me" button and the map logo.
+            contentPadding = PaddingValues(start = 48.dp, top = 48.dp, end = 64.dp, bottom = 80.dp),
+            modifier = Modifier.fillMaxSize(),
+        )
         val centerLabel = stringResource(R.string.home_center_on_me)
         Surface(
             onClick = actions.onCenterOnMe,
@@ -431,7 +462,7 @@ private fun memberMarker(
                     contentDescription = a11yLabel
                     this.selected = selected
                 }
-                .heightIn(min = 48.dp),
+                .sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         ) {
             Avatar(initials, color, size = avatarSize, selectedColor = if (selected) color else null)
             Surface(shape = RoundedCornerShape(999.dp), color = androidx.compose.ui.graphics.Color.White, shadowElevation = 1.dp) {
@@ -454,7 +485,9 @@ private fun MeCard(state: HomeUiState, actions: HomeActions) {
     val status = when (me.sharing) {
         SharingState.PAUSED -> stringResource(R.string.home_me_paused)
         SharingState.OFF -> stringResource(R.string.home_me_not_sharing)
-        else -> me.activity?.let { stringResource(Formats.activityLabel(it)) } ?: stringResource(R.string.home_me_sharing)
+        SharingState.ON -> me.activity?.let { stringResource(Formats.activityLabel(it)) } ?: stringResource(R.string.home_me_sharing)
+        // Not loaded yet: show movement if known, never claim "Sharing".
+        null -> me.activity?.let { stringResource(Formats.activityLabel(it)) } ?: "—"
     }
     val place = me.place?.let { stringResource(R.string.home_near_place, it) }
         ?: if (me.position == null) stringResource(R.string.home_me_no_position) else stringResource(R.string.home_location_known)
@@ -629,6 +662,21 @@ private fun MemberCardFrame(
             }
             if (selected && !dimmed) actionsRow()
         }
+    }
+}
+
+@Composable
+private fun MembersLoading() {
+    val label = stringResource(R.string.home_loading_members)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .semantics(mergeDescendants = true) {},
+    ) {
+        CircularProgressIndicator(color = Eldering.palette.safe, strokeWidth = 2.5.dp, modifier = Modifier.size(20.dp))
+        Text(label, style = Eldering.type.caption, color = Eldering.palette.inkMuted)
     }
 }
 

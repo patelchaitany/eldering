@@ -48,6 +48,7 @@ import com.eldering.safety.ui.components.DesignButton
 import com.eldering.safety.ui.components.DesignButtons
 import com.eldering.safety.ui.components.DesignCard
 import com.eldering.safety.ui.components.ElderingIcons
+import com.eldering.safety.ui.components.EmptyState
 import com.eldering.safety.ui.components.ErrorBanner
 import com.eldering.safety.ui.components.FormField
 import com.eldering.safety.ui.components.IconCircleButton
@@ -115,8 +116,6 @@ class FamilyManageViewModel(private val repository: FamilyRepository) : ViewMode
         result
     }
 
-    fun dismissError() = state.update { it.copy(error = null) }
-
     private fun act(call: suspend () -> ApiResult<*>) {
         if (state.value.busy) return
         state.update { it.copy(busy = true, error = null) }
@@ -159,7 +158,14 @@ fun FamilyManageRoute(onBack: () -> Unit, onNavigate: (Route) -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 20.dp),
         ) {
-            state.error?.let { ErrorBanner(it.asString(), actionLabel = stringResource(R.string.action_dismiss), onAction = viewModel::dismissError) }
+            state.error?.let { ErrorBanner(it.asString(), actionLabel = stringResource(R.string.action_retry), onAction = viewModel::load) }
+            if (state.families.isEmpty() && state.error == null) {
+                EmptyState(
+                    title = stringResource(R.string.invite_no_family_title),
+                    body = stringResource(R.string.home_no_family),
+                    icon = ElderingIcons.Users,
+                )
+            }
             state.families.forEach { block ->
                 val family = block.family
                 val admin = family.role == FamilyRole.ADMIN

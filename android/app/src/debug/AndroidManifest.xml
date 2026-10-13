@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only (merged into the main manifest for the debug variant). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- UI gallery: every screen with made-up data (no server, no SMS, no dialer). Exported only so that adb can
+             open it: am start -n com.eldering.safety/.debug.UiGalleryActivity, optionally with the string extra
+             "screen" set to a page id (see GalleryEntry). -->
+        <activity
+            android:name=".debug.UiGalleryActivity"
+            android:exported="true"
+            android:label="@string/gallery_title"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Debug tools for the background runtime (see DebugReceivers.kt). Exported for adb, but only senders
+             holding DUMP (adb shell, the system) may use them. Logs go to tag EldDebug. -->
+        <receiver
+            android:name=".debug.DebugInjectReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.eldering.safety.DEBUG_INJECT" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugStatusReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.eldering.safety.DEBUG_STATUS" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugModeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.eldering.safety.DEBUG_MODE" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".debug.DebugProtectionReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.eldering.safety.DEBUG_START" />
+                <action android:name="com.eldering.safety.DEBUG_STOP" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

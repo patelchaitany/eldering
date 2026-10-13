@@ -175,7 +175,11 @@ class HomeViewModel(
         viewModelScope.launch { incidents.resolveOwn(key, Resolution.USER_OK) }
     }
 
-    fun dismissError() = state.update { it.copy(error = null) }
+    /** "Retry" on the error banner: refresh everything now instead of waiting for the next poll. */
+    fun retry() {
+        state.update { it.copy(error = null) }
+        viewModelScope.launch { refresh(full = true) }
+    }
 
     private suspend fun loadTheirGrants(familyIds: List<String>): Map<String, GrantLevel> {
         val perFamily = familyIds.map { id ->

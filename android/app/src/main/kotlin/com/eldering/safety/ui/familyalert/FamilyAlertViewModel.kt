@@ -108,6 +108,12 @@ class FamilyAlertViewModel(
 
     fun dismissError() = state.update { it.copy(error = null) }
 
+    /** "Retry" after a failed load: fetch now instead of waiting for the next poll. */
+    fun retry() {
+        state.update { it.copy(loading = it.detail == null, error = null) }
+        viewModelScope.launch { refresh() }
+    }
+
     private fun act(block: suspend () -> Unit) {
         if (state.value.acting) return
         state.update { it.copy(acting = true) }

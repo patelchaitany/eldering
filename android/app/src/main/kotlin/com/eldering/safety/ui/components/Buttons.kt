@@ -162,6 +162,7 @@ fun TextLinkButton(
     modifier: Modifier = Modifier,
     color: Color = Eldering.palette.link,
     enabled: Boolean = true,
+    contentDescription: String? = null,
 ) {
     Surface(
         onClick = onClick,
@@ -169,7 +170,12 @@ fun TextLinkButton(
         color = Color.Transparent,
         contentColor = color,
         shape = RoundedCornerShape(12.dp),
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .semantics {
+                role = Role.Button
+                if (contentDescription != null) this.contentDescription = contentDescription
+            },
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp)) {
             Text(text, style = Eldering.type.buttonSmall)

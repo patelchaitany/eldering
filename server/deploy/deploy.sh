@@ -5,6 +5,8 @@
 #   deploy/deploy.sh nginx    install the HTTP-only nginx site (nginx -t before reload)
 #   deploy/deploy.sh cert     obtain the TLS certificate with certbot --nginx (this site only)
 #   deploy/deploy.sh status   show our containers and the health endpoint
+#   deploy/deploy.sh sites    read-only snapshot of every nginx site + containers + memory
+#                             (run before and after a deploy and diff the two)
 #
 # Safety rules (server is shared): only touches ~/eldering-safety, the compose
 # project "eldering", images named eldering-api, and /etc/nginx/sites-*/eldering.
@@ -84,10 +86,37 @@ cmd_status() {
 	ssh_ "cd ~/$REMOTE_DIR && docker compose -p eldering ps && curl -fsS http://127.0.0.1:8095/healthz && echo"
 }
 
+# Read-only. Asks every server_name nginx serves (over loopback, with the right SNI/Host) for
+# its status (https is certificate-verified: verify=0 means a valid certificate), plus the
+# default servers, every container's state and free memory.
+cmd_sites() {
+	ssh_ 'sh -s' <<'EOF'
+names=$(sudo nginx -T 2>/dev/null | sed -n 's/^[[:space:]]*server_name[[:space:]]\{1,\}\([^;]*\);.*/\1/p' |
+  tr ' \t' '\n\n' | grep -vE '^(_|localhost|)$|[*~]' | sort -u)
+for n in $names; do
+  for s in http https; do
+    p=80; [ "$s" = https ] && p=443
+    r=$(curl -s -o /dev/null -m 10 --resolve "$n:$p:127.0.0.1" -w '%{http_code} verify=%{ssl_verify_result}' "$s://$n/" 2>/dev/null) || true
+    [ "$s" = http ] && r=${r% verify=*}
+    echo "$s://$n/ ${r:-000}"
+  done
+done
+for u in http://127.0.0.1/ https://127.0.0.1/; do
+  echo "$u (default server) $(curl -sk -o /dev/null -m 10 -w '%{http_code}' "$u" 2>/dev/null || true)"
+done
+echo '-- containers'
+docker ps -a --format '{{.Names}} {{.State}} {{.Status}}' |
+  sed -E 's/ [A-Z][a-z]+ .*\((healthy|unhealthy|health: starting)\).*$/ \1/; s/ (Up|Exited|Created|Restarting|Paused|Dead)( .*)?$//' | sort
+echo '-- memory (MiB)'
+free -m | awk '/^Mem:/ {print "mem total=" $2, "used=" $3, "available=" $7} /^Swap:/ {print "swap total=" $2, "used=" $3}'
+EOF
+}
+
 case "${1:-}" in
 	app) cmd_app ;;
 	nginx) cmd_nginx ;;
 	cert) cmd_cert ;;
 	status) cmd_status ;;
-	*) echo "usage: $0 app|nginx|cert|status" >&2; exit 2 ;;
+	sites) cmd_sites ;;
+	*) echo "usage: $0 app|nginx|cert|status|sites" >&2; exit 2 ;;
 esac

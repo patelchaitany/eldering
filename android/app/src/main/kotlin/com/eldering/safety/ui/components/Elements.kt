@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.eldering.safety.ui.theme.Eldering
 
@@ -154,7 +155,7 @@ fun DesignSwitch(
         ) {
             Box(
                 Modifier
-                    .offset(x = knobOffset)
+                    .offset { IntOffset(knobOffset.roundToPx(), 0) }
                     .size(26.dp)
                     .shadow(1.dp, CircleShape)
                     .clip(CircleShape)

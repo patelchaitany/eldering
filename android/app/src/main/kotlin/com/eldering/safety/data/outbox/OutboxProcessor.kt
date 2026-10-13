@@ -227,10 +227,15 @@ class OutboxProcessor(
         val closedOrGone = error.isConflict || error.isNotFound
         when {
             // The incident was resolved elsewhere (a family member marked it handled) or expired on the server:
-            // later appends are pointless and a resolve has nothing left to do.
-            head.type == OutboxType.APPEND_TRAIL && closedOrGone -> outboxDao.delete(
-                outboxDao.pendingOfType(key, OutboxType.APPEND_TRAIL).map { it.id },
-            )
+            // later appends are pointless and a resolve has nothing left to do. Closing it locally too makes
+            // IncidentRepository.appendTrail return false, which ends the sender's live updates.
+            head.type == OutboxType.APPEND_TRAIL && closedOrGone -> database.withTransaction {
+                outboxDao.delete(outboxDao.pendingOfType(key, OutboxType.APPEND_TRAIL).map { it.id })
+                val own = ownDao.get(key)
+                if (own != null && (own.status == OwnIncidentStatus.ACTIVE || own.status == OwnIncidentStatus.QUEUED)) {
+                    ownDao.setStatus(key, OwnIncidentStatus.RESOLVED, own.resolution, now)
+                }
+            }
             head.type == OutboxType.RESOLVE_INCIDENT && closedOrGone -> {
                 outboxDao.delete(listOf(head.id))
                 val resolution = decodeOrNull(ResolveIncidentRequest.serializer(), head.payloadJson)?.resolution

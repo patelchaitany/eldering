@@ -9,6 +9,7 @@
     <string name="sharing_hint_off">Off — nobody sees your live location. %s</string>
     <string name="sharing_hint_alerts_work">Accident alerts still work.</string>
     <string name="sharing_hint_alerts_off">Accident alerts are off too.</string>
+    <string name="sharing_hint_unavailable">Couldn\'t load your sharing settings.</string>
     <string name="sharing_pause_hour">Pause 1 hour</string>
     <string name="sharing_pause_until_resume">Pause until I resume</string>
     <string name="sharing_always_alert_title">Always alert on accident</string>

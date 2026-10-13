@@ -2,6 +2,7 @@ package com.eldering.safety.ui.common
 
 import android.content.Context
 import android.text.format.DateFormat
+import android.text.format.DateUtils
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -67,6 +68,20 @@ fun rememberClock(): (Long) -> String {
     val context = LocalContext.current
     val format = remember(context) { DateFormat.getTimeFormat(context) }
     return remember(format) { { ms: Long -> format.format(Date(ms)) } }
+}
+
+/** Weekday, date and time ("Wed, 15 Oct, 14:32"), honoring the 12/24-hour setting. For times beyond today. */
+@Composable
+fun dateTimeText(epochMs: Long): String {
+    val context = LocalContext.current
+    return remember(context, epochMs) {
+        DateUtils.formatDateTime(
+            context,
+            epochMs,
+            DateUtils.FORMAT_SHOW_WEEKDAY or DateUtils.FORMAT_ABBREV_WEEKDAY or DateUtils.FORMAT_SHOW_DATE or
+                DateUtils.FORMAT_ABBREV_MONTH or DateUtils.FORMAT_SHOW_TIME,
+        )
+    }
 }
 
 /** "Now", "2 min ago", "3 h ago". */

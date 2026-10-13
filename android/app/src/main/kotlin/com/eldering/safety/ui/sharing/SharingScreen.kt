@@ -163,7 +163,7 @@ private fun ShareLiveCard(state: SharingUiState, actions: SharingActions) {
             R.string.sharing_hint_off,
             stringResource(if (alertsStillWork) R.string.sharing_hint_alerts_work else R.string.sharing_hint_alerts_off),
         )
-        null -> ""
+        null -> if (state.loading) "" else stringResource(R.string.sharing_hint_unavailable)
     }
     DesignCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -247,7 +247,7 @@ private fun WhoCanSeeMe(state: SharingUiState, actions: SharingActions) {
             )
             Text(stringResource(R.string.sharing_who_hint), style = Eldering.type.micro, color = palette.inkMuted)
         }
-        if (state.people.isEmpty()) {
+        if (state.people.isEmpty() && !state.loading && state.settings != null) {
             Text(stringResource(R.string.sharing_nobody), style = Eldering.type.caption, color = palette.inkMuted, modifier = Modifier.padding(horizontal = 4.dp))
         }
         val live = stringResource(R.string.level_live)

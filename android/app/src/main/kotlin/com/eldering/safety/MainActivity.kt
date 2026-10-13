@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.eldering.safety.service.ProtectionStarter
 import com.eldering.safety.ui.navigation.ElderingRoot
 import com.eldering.safety.ui.theme.ElderingTheme
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,12 @@ class MainActivity : ComponentActivity() {
                 ElderingRoot(pendingIncident = pendingIncident, onIncidentConsumed = { pendingIncident.value = null })
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Accident protection runs in SafetyService; (re)start it while we are in front (see ProtectionStarter).
+        ProtectionStarter.onAppVisible(this)
     }
 
     override fun onNewIntent(intent: Intent) {

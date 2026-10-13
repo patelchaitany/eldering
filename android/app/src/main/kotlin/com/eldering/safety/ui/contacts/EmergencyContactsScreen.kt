@@ -60,6 +60,7 @@ import com.eldering.safety.ui.components.LoadingBox
 import com.eldering.safety.ui.components.ScreenHeader
 import com.eldering.safety.ui.components.initialsOf
 import com.eldering.safety.ui.theme.Eldering
+import com.eldering.safety.ui.theme.MemberColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -148,7 +149,7 @@ fun EmergencyContactsScreen(
             state.contacts.forEach { contact ->
                 DesignCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalSpacing = 8.dp) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Avatar(initialsOf(contact.name), androidx.compose.ui.graphics.Color(0xFF8A5A12), size = 36.dp, ring = false)
+                        Avatar(initialsOf(contact.name), MemberColors.emergencyContact, size = 36.dp, ring = false)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
                             Text(contact.name, style = Eldering.type.name, color = palette.ink)
                             Text(

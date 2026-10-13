@@ -32,6 +32,8 @@ class SosViewModel(
     private val trigger: SosTrigger,
     private val incidents: IncidentRepository,
     private val dialEmergency: () -> Unit,
+    /** Ends the alert pipeline's SOS too (AlertController.imOk: stops live updates and its notification). */
+    private val endAlert: () -> Unit = {},
     private val pollIntervalMs: Long = 15_000L,
 ) : ViewModel(), AlertActions {
 
@@ -86,6 +88,7 @@ class SosViewModel(
     }
 
     override fun imOk() {
+        endAlert()
         val key = incidentKey
         if (key == null) {
             resolveWhenKnown = true

@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -98,6 +99,7 @@ fun FamilyAlertRoute(incidentId: String, onBack: () -> Unit, onNavigate: (Route)
         onMyWay = viewModel::onMyWay,
         onMarkSafe = viewModel::markSafe,
         onDismissError = viewModel::dismissError,
+        onRetry = viewModel::retry,
     )
 }
 
@@ -110,6 +112,7 @@ fun FamilyAlertScreen(
     onMyWay: () -> Unit,
     onMarkSafe: () -> Unit,
     onDismissError: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     val palette = Eldering.palette
     val detail = state.detail
@@ -124,7 +127,14 @@ fun FamilyAlertScreen(
             if (state.loading) {
                 LoadingBox(Modifier.weight(1f))
             } else {
-                state.error?.let { ErrorBanner(it.asString(), Modifier.padding(12.dp)) }
+                state.error?.let {
+                    ErrorBanner(
+                        it.asString(),
+                        Modifier.padding(12.dp),
+                        actionLabel = stringResource(R.string.action_retry),
+                        onAction = onRetry,
+                    )
+                }
             }
         }
         return
@@ -191,7 +201,7 @@ fun FamilyAlertScreen(
                     statusLine(detail.status, detail.resolution, detail.myAck, name),
                 ).joinToString(" · "),
                 style = Eldering.type.bodySmall,
-                color = Color(0xFFFFE7DA),
+                color = palette.onAlert.copy(alpha = 0.9f),
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
@@ -241,6 +251,24 @@ fun FamilyAlertScreen(
                     attributionBottomInset = 76.dp,
                     modifier = Modifier.fillMaxSize(),
                 )
+                if (latest == null) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = palette.surface,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(16.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.family_alert_no_location, name),
+                            style = Eldering.type.bodySmall,
+                            color = palette.inkMuted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        )
+                    }
+                }
                 if (latest != null) {
                     Surface(
                         shape = RoundedCornerShape(12.dp),

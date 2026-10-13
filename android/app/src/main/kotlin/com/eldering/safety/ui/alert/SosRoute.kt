@@ -25,6 +25,7 @@ fun SosRoute(onClose: () -> Unit) {
                     trigger = graph.sosTrigger,
                     incidents = graph.incidentRepository,
                     dialEmergency = { ExternalIntents.dialEmergency(graph.appContext) },
+                    endAlert = { graph.alertController.imOk() },
                 )
             }
         },

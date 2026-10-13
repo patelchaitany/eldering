@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notification channels (names and descriptions appear in system settings). -->
+    <string name="ch_protection_name">Protection status</string>
+    <string name="ch_protection_desc">The quiet notification shown while Eldering watches for accidents.</string>
+    <string name="ch_paused_name">Protection problems</string>
+    <string name="ch_paused_desc">Tells you when Android stopped accident protection.</string>
+    <string name="ch_alarm_name">Accident countdown</string>
+    <string name="ch_alarm_desc">The countdown after a possible accident or fall. Rings like an alarm.</string>
+    <string name="ch_alert_status_name">Accident status</string>
+    <string name="ch_alert_status_desc">A quiet copy of the accident alert while its screen is open, and while help is on the way.</string>
+    <string name="ch_family_name">Family alerts</string>
+    <string name="ch_family_desc">A family member may have had an accident or pressed SOS.</string>
+
+    <!-- Ongoing protection notification (low-key). -->
+    <string name="svc_protection_on">Protection on</string>
+    <string name="svc_protection_mode">%s · watching for falls and crashes</string>
+    <string name="svc_protection_signed_out">Not signed in: alerts go to your emergency contacts by SMS only</string>
+    <string name="svc_allow_background">Keep running</string>
+    <string name="svc_paused_title">Protection paused</string>
+    <string name="svc_paused_text">Android stopped accident protection. Tap to turn it back on.</string>
+
+    <!-- Accident countdown notification (full-screen intent / heads-up). -->
+    <string name="alert_notif_title_possible">Possible accident. Are you OK?</string>
+    <string name="alert_notif_title_sos">SOS</string>
+    <string name="alert_notif_text_counting">Family and emergency contacts will be alerted unless you respond.</string>
+    <string name="alert_notif_title_sent">Help is on the way</string>
+    <string name="alert_notif_text_sent">Your family has been alerted. Live location is being shared.</string>
+    <string name="alert_notif_im_ok">I\'m OK</string>
+    <string name="alert_notif_send_now">Send help now</string>
+    <string name="alert_notif_safe_now">I\'m safe now</string>
+
+    <!-- Family alert notification (viewer side, from the heartbeat\'s pending_alerts). -->
+    <string name="family_notif_public">Family alert</string>
+    <string name="family_notif_text">Tap to see where they are and let them know you\'re coming.</string>
+</resources>

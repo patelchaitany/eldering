@@ -3,7 +3,10 @@
     <string name="home_title">Family</string>
     <string name="home_sharing_count">%1$d of %2$d members sharing</string>
     <string name="home_notifications">Notifications</string>
-    <string name="home_notifications_active">Notifications: %d active alerts</string>
+    <plurals name="home_notifications_active">
+        <item quantity="one">Notifications: %d active alert</item>
+        <item quantity="other">Notifications: %d active alerts</item>
+    </plurals>
     <string name="home_sharing_settings">Sharing and privacy settings</string>
 
     <string name="home_protection_on">Protection on</string>
@@ -22,6 +25,7 @@
 
     <string name="home_members">Members</string>
     <string name="home_invite">+ Invite</string>
+    <string name="home_invite_a11y">Invite family members</string>
     <string name="home_you">You</string>
     <string name="home_me_initials">ME</string>
     <string name="home_me_paused">Location paused</string>
@@ -47,7 +51,9 @@
     <string name="home_expand">Show actions</string>
     <string name="home_collapse">Hide actions</string>
     <string name="home_no_members">No one else in your family yet. Tap + Invite.</string>
-    <string name="home_no_family">You\'re not in a family yet. Create or join one in Settings.</string>
+    <string name="home_no_family">You\'re not in a family yet. Create one, or join with a code from a family admin.</string>
+    <string name="home_no_family_action">Create or join a family</string>
+    <string name="home_loading_members">Loading your family…</string>
 
     <string name="home_alerts_title">Alerts</string>
     <string name="home_alerts_empty">No alerts right now.</string>

@@ -202,6 +202,9 @@ class IncidentRepositoryTest {
         assertEquals("/v1/incidents/$INCIDENT_ID/trail", takeRequest().url.encodedPath)
         assertEquals(0, db.outboxDao().pendingCount(USER_ID))
         assertEquals(0, scheduled.get())
+        // Closed locally as well, so live updates stop (appendTrail reports the incident is over).
+        assertEquals(OwnIncidentStatus.RESOLVED, repo.ownIncident(sent.incidentKey)!!.status)
+        assertFalse(repo.appendTrail(sent.incidentKey, listOf(point(FakeTime.T0 + 1_000))))
     }
 
     @Test

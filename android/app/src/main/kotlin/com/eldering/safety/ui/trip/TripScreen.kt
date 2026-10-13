@@ -23,12 +23,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -128,6 +130,7 @@ fun TripScreen(state: TripUiState, onBack: () -> Unit, onCursor: (Int) -> Unit, 
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TripContent(state: TripUiState, summary: TripSummary, onCursor: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
@@ -144,6 +147,8 @@ private fun TripContent(state: TripUiState, summary: TripSummary, onCursor: (Int
         },
     )
     val cursorLabel = clock(cursor.tMs) + if (state.cursor == summary.incidentIndex) " · $impactSuffix" else ""
+    val scrubLabel = stringResource(R.string.trip_scrub_label)
+    val landmarksLabel = stringResource(R.string.trip_landmarks_a11y)
 
     val line = remember(points) {
         val simplified = TrailDownsampler.downsample(points, 600, 1.0, true, { it.lat }, { it.lng }, { it.tMs })
@@ -202,20 +207,41 @@ private fun TripContent(state: TripUiState, summary: TripSummary, onCursor: (Int
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(stringResource(R.string.trip_scrub_label), style = Eldering.type.captionStrong, color = palette.inkMuted)
             if (points.size > 1) {
+                val sliderColors = SliderDefaults.colors(
+                    thumbColor = palette.ink,
+                    activeTrackColor = palette.ink,
+                    inactiveTrackColor = palette.hairline,
+                )
+                // Design: a slim ink track with a round thumb (like the mockup's range input), not M3's tall bar.
                 Slider(
                     value = state.cursor.toFloat(),
                     onValueChange = { onCursor(it.roundToInt()) },
                     valueRange = 0f..points.lastIndex.toFloat(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = palette.ink,
-                        activeTrackColor = palette.ink,
-                        inactiveTrackColor = palette.hairline,
-                    ),
+                    colors = sliderColors,
+                    thumb = {
+                        Box(
+                            Modifier
+                                .size(26.dp)
+                                .shadow(2.dp, CircleShape)
+                                .clip(CircleShape)
+                                .background(palette.ink)
+                                .border(3.dp, Color.White, CircleShape),
+                        )
+                    },
+                    track = { sliderState ->
+                        SliderDefaults.Track(
+                            sliderState = sliderState,
+                            colors = sliderColors,
+                            drawStopIndicator = null,
+                            thumbTrackGapSize = 0.dp,
+                            modifier = Modifier.height(6.dp),
+                        )
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 48.dp)
                         .semantics {
-                            contentDescription = context.getString(R.string.trip_scrub_label)
+                            contentDescription = scrubLabel
                             stateDescription = cursorLabel
                         },
                 )
@@ -226,13 +252,18 @@ private fun TripContent(state: TripUiState, summary: TripSummary, onCursor: (Int
             }
         }
         val listState = rememberLazyListState()
+        // Keep the selected stop in view (e.g. the impact row, which starts selected and is last in the list).
+        val selectedRow = summary.landmarks.indexOfFirst { it.index == state.cursor }
+        LaunchedEffect(selectedRow) {
+            if (selectedRow >= 0) listState.animateScrollToItem(selectedRow)
+        }
         LazyColumn(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 12.dp)
-                .semantics { contentDescription = context.getString(R.string.trip_landmarks_a11y) },
+                .semantics { contentDescription = landmarksLabel },
         ) {
             items(summary.landmarks, key = { it.index }) { landmark ->
                 LandmarkRow(

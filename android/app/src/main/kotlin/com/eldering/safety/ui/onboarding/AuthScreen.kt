@@ -134,6 +134,9 @@ fun AuthScreen(
                         text = stringResource(if (showPassword) R.string.auth_hide_password else R.string.auth_show_password),
                         onClick = { showPassword = !showPassword },
                         color = Eldering.palette.inkMuted,
+                        contentDescription = stringResource(
+                            if (showPassword) R.string.auth_hide_password_a11y else R.string.auth_show_password_a11y,
+                        ),
                     )
                 },
                 modifier = Modifier.semantics {

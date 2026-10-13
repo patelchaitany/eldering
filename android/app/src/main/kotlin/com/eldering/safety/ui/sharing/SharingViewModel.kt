@@ -186,7 +186,7 @@ class SharingViewModel(
         key = CONTACT_PREFIX + contact.id,
         name = contact.name,
         initials = initialsOf(contact.name),
-        color = Color(0xFF8A5A12),
+        color = MemberColors.emergencyContact,
         role = PersonRole.EMERGENCY_CONTACT,
         level = if (contact.smsEnabled) GrantLevel.EMERGENCY else GrantLevel.OFF,
         maskedPhone = maskPhone(contact.phone),

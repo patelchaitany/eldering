@@ -63,6 +63,12 @@ import com.eldering.safety.ui.theme.ElderingTheme
 /**
  * The accident countdown ("Are you OK?"), for `AccidentAlertActivity` and the in-app SOS screen.
  *
+ * `alert.AccidentAlertActivity` (the full-screen-intent target: `showWhenLocked`, `turnScreenOn`, no keyguard
+ * dismiss) hosts it for detected accidents: `alert.AlertController` owns the countdown, supplies
+ * [AccidentAlertInfo] (via `alert.AlertPresentation`) and implements `alert.AlertActions`. Debug builds also show
+ * every state in the UI gallery (`debug.UiGalleryActivity`, pages `countdown`, `countdown-vehicle`, `sent`,
+ * `cancelled`) with a logging AlertActions that sends nothing.
+ *
  * Usage from an activity:
  * ```
  * val vm: AccidentAlertViewModel = viewModel(factory = AccidentAlertViewModel.factory(info, alertActions, sink))

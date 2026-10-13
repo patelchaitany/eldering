@@ -27,7 +27,7 @@ internal/sharepage/      /s/{token}, /s/{token}/data, /static/* (embedded assets
 internal/retention/      hourly purge (incidents 72 h after resolution/expiry, tokens, invites)
 internal/testdb/         integration-test database provisioning (real PostGIS)
 e2e/                     black-box RBAC/security suite against a running server (+ SQL RLS checks)
-deploy/                  deploy.sh (server), nginx/eldering.conf
+deploy/                  deploy.sh (server), nginx/eldering.conf; runbook in DEPLOY.md
 docker-compose.yml       production stack (db + migrate + api)
 docker-compose.test.yml  throwaway test database (127.0.0.1:55433, tmpfs)
 ```
@@ -101,13 +101,14 @@ make e2e-clean        # delete the e2e-sec-* accounts (and their families)
 ```
 
 Against the server (behind nginx, so leave `E2E_TRUSTED_IP_HEADER` unset; setup then waits out
-the 10/min sign-up limit, so allow ~6 minutes):
+the 10/min sign-up limit, so allow ~10 minutes). On the shared production box, skip the two tests
+that deliberately hammer the rate limits and the password hasher (see `DEPLOY.md`):
 
 ```sh
 . deploy/deploy.env   # ELDERING_HOST, ELDERING_SSH_KEY, ELDERING_DOMAIN (not committed)
 E2E_BASE_URL=https://$ELDERING_DOMAIN \
 E2E_PSQL="ssh -i $ELDERING_SSH_KEY $ELDERING_HOST 'cd ~/eldering-safety && docker compose -p eldering exec -T db psql -X -q -U postgres -d eldering'" \
-  go test -count=1 -v -timeout 30m ./e2e
+  go test -count=1 -v -timeout 40m -skip 'TestAvailability|TestRateLimits' ./e2e
 ssh -i "$ELDERING_SSH_KEY" "$ELDERING_HOST" 'cd ~/eldering-safety && docker compose -p eldering exec -T db psql -X -q -v ON_ERROR_STOP=1 -U postgres -d eldering' < e2e/cleanup.sql
 ```
 
@@ -142,7 +143,10 @@ Copy `deploy/deploy.env.example` to `deploy/deploy.env` (not committed) and fill
 ./deploy/deploy.sh nginx    # first time: HTTP-only site file, `nginx -t` before reload (rolls back on failure)
 ./deploy/deploy.sh cert     # first time: certbot --nginx -d $ELDERING_DOMAIN --redirect
 ./deploy/deploy.sh status
+./deploy/deploy.sh sites    # read-only snapshot of every nginx site, container and free memory: run before + after, diff
 ```
+
+The full runbook (pre-flight, verification, production e2e, rollback) is in [`DEPLOY.md`](DEPLOY.md).
 
 - Stack directory `~/eldering-safety/`, compose project `eldering`. The API is published on
   `127.0.0.1:8095` only.

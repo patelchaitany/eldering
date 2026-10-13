@@ -69,6 +69,7 @@
     <string name="family_alert_status_ok">%s is OK</string>
     <string name="family_alert_status_handled">Handled</string>
     <string name="family_alert_last_known">Last known location</string>
+    <string name="family_alert_no_location">No location from %s\'s phone yet. It appears here as soon as it arrives.</string>
     <string name="family_alert_live">Live</string>
     <string name="family_alert_updated_seconds">updated %d s ago</string>
     <string name="family_alert_updated_minutes">updated %d min ago</string>

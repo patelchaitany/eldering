@@ -47,7 +47,9 @@ class AuthViewModel(
     /** Where to go after a successful sign-in. */
     val signedIn: Flow<StartDestination> = done.receiveAsFlow()
 
-    fun setMode(register: Boolean) = state.update { it.copy(register = register, error = null, nameError = null, passwordError = null) }
+    fun setMode(register: Boolean) = state.update {
+        it.copy(register = register, error = null, nameError = null, emailError = null, passwordError = null)
+    }
 
     fun onName(value: String) = state.update { it.copy(name = value.take(MAX_NAME + 10), nameError = null) }
 

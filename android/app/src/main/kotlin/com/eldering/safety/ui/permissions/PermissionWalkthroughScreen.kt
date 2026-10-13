@@ -59,6 +59,7 @@ import com.eldering.safety.ui.components.ElderingIcons
 import com.eldering.safety.ui.components.ScreenHeader
 import com.eldering.safety.ui.components.StatusChip
 import com.eldering.safety.ui.components.TextLinkButton
+import com.eldering.safety.service.ProtectionStarter
 import com.eldering.safety.ui.platform.ExternalIntents
 import com.eldering.safety.ui.theme.Eldering
 import kotlinx.coroutines.launch
@@ -72,7 +73,13 @@ import kotlinx.coroutines.launch
  * whenever the screen resumes (the user may come back from a settings page).
  */
 @Composable
-fun PermissionsRoute(onboarding: Boolean, onFinished: () -> Unit, onBack: () -> Unit) {
+fun PermissionsRoute(
+    onboarding: Boolean,
+    onFinished: () -> Unit,
+    onBack: () -> Unit,
+    /** Arm and start accident protection when the user is done (false in the debug UI gallery). */
+    startProtection: Boolean = true,
+) {
     val context = LocalContext.current
     val activity = LocalActivity.current
     val preferences = context.appGraph.appPreferences
@@ -136,6 +143,7 @@ fun PermissionsRoute(onboarding: Boolean, onFinished: () -> Unit, onBack: () -> 
     fun finish() {
         scope.launch {
             preferences.setPermissionsWalkthroughDone(true)
+            if (startProtection) ProtectionStarter.arm(context)
             onFinished()
         }
     }
@@ -148,7 +156,15 @@ fun PermissionsRoute(onboarding: Boolean, onFinished: () -> Unit, onBack: () -> 
             statuses = statuses,
             onboarding = onboarding,
             onOpenStep = { current = steps.indexOf(it) },
-            onDone = { if (onboarding) finish() else onBack() },
+            onDone = {
+                if (onboarding) {
+                    finish()
+                } else {
+                    // Picks up permissions granted here (e.g. location is now allowed).
+                    if (startProtection) ProtectionStarter.arm(context)
+                    onBack()
+                }
+            },
             onBack = if (onboarding) null else onBack,
         )
     } else {

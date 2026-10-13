@@ -223,10 +223,13 @@ object AlertScreenColors {
 object MemberColors {
     val me = Blue600
     val unavailable = Color(0xFF6B7672)
+
+    /** SMS-only emergency contacts (design: Uncle). */
+    val emergencyContact = Color(0xFF8A5A12)
     private val palette = listOf(
         Color(0xFF0E6B57),
         Color(0xFF7A3FB8),
-        Color(0xFF8A5A12),
+        emergencyContact,
         Color(0xFF0B5D7A),
         Color(0xFFA23B72),
         Color(0xFF4D6A12),

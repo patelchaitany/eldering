@@ -8,8 +8,18 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.eldering.safety.BuildConfig
 import com.eldering.safety.ElderingApp
-import com.eldering.safety.alert.ServerOnlySosTrigger
+import com.eldering.safety.alert.AlertController
+import com.eldering.safety.alert.AndroidAlertUi
+import com.eldering.safety.alert.AndroidSmsSender
+import com.eldering.safety.alert.ControllerSosTrigger
+import com.eldering.safety.alert.IncidentSender
+import com.eldering.safety.alert.LandmarkResolver
+import com.eldering.safety.alert.PowerWakeHold
+import com.eldering.safety.alert.RoomDetectionJournal
+import com.eldering.safety.alert.SmsSender
 import com.eldering.safety.alert.SosTrigger
+import com.eldering.safety.alert.TrailFreezer
+import com.eldering.safety.alert.isOnline
 import com.eldering.safety.data.db.ElderingDatabase
 import com.eldering.safety.data.outbox.OutboxProcessor
 import com.eldering.safety.data.outbox.OutboxScheduler
@@ -30,6 +40,7 @@ import com.eldering.safety.data.trail.TrailStore
 import com.eldering.safety.network.ElderingApi
 import com.eldering.safety.network.ElderingNetwork
 import com.eldering.safety.network.NetworkModule
+import com.eldering.safety.service.SafetyRuntime
 import com.eldering.safety.ui.platform.BatteryLevelSource
 import com.eldering.safety.ui.platform.DeviceBatteryLevel
 import com.eldering.safety.ui.platform.DeviceMyLocation
@@ -141,11 +152,46 @@ class AppGraph(
 
     // --- Alerts -------------------------------------------------------------------------------------------------
 
+    /** The running SafetyService, if any (receivers and debug tools reach it through this). */
+    val safetyRuntime: SafetyRuntime = SafetyRuntime()
+
     /**
-     * Hold-to-SOS on Home. The default alerts family through the server only; the alert pipeline should replace it
-     * with an implementation that also sends the emergency-contact SMS.
+     * Accident SMS. Debug builds only log the exact text (tag `EldSms`) unless "Allow real SMS" is switched on in
+     * Settings; release builds always send (SPEC "Test safety").
      */
-    val sosTrigger: SosTrigger by lazy { ServerOnlySosTrigger(trailStore, incidentRepository, time) }
+    val smsSender: SmsSender by lazy { AndroidSmsSender(appContext) { appPreferences.realSmsAllowed() } }
+
+    val incidentSender: IncidentSender by lazy {
+        IncidentSender(
+            trailStore = trailStore,
+            incidents = incidentRepository,
+            recipients = { contactsRepository.smsRecipients() },
+            sms = smsSender,
+            landmarks = LandmarkResolver { lat, lng -> placeNamer.nameFor(lat, lng) },
+            isOnline = { isOnline(appContext) },
+            senderName = { sessionStore.current()?.displayName },
+            scope = applicationScope,
+            time = time,
+        )
+    }
+
+    /** Countdown → IncidentSender; implements the countdown screen's AlertActions. One per process. */
+    val alertController: AlertController by lazy {
+        AlertController(
+            scope = applicationScope,
+            ui = AndroidAlertUi(appContext),
+            dispatcher = incidentSender,
+            journal = RoomDetectionJournal(detectionEventRepository) { trailStore.latest() },
+            freezer = TrailFreezer { atMs -> trailStore.snapshot(atMs) },
+            contactCount = { contactsRepository.smsRecipients().size },
+            wake = PowerWakeHold(appContext),
+            time = time,
+            wallFromElapsedNanos = { elapsedRealtimeNanosToWallMillis(it) },
+        )
+    }
+
+    /** Hold-to-SOS on Home: the same path as an accident (upload, SMS, live updates), without the countdown. */
+    val sosTrigger: SosTrigger by lazy { ControllerSosTrigger(alertController) }
 
     // --- UI support (device state the screens show) ------------------------------------------------------------
 

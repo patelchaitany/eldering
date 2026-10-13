@@ -8,4 +8,42 @@
     <string name="debug_allow_sms_confirm_title">Send real SMS?</string>
     <string name="debug_allow_sms_confirm_body">Real text messages will go to your emergency contacts whenever this debug build sends an accident alert or SOS. Use only with numbers you control.</string>
     <string name="debug_allow_sms_confirm_yes">Allow real SMS</string>
+
+    <!-- UI gallery (debug builds only): every screen with made-up data. -->
+    <string name="debug_open_gallery">Open UI gallery</string>
+    <string name="debug_open_gallery_hint">Every screen with sample data. Nothing is sent.</string>
+    <string name="gallery_title">UI gallery</string>
+    <string name="gallery_subtitle">Debug build · sample data only. Nothing here talks to the server, sends SMS or opens the dialer.</string>
+    <string name="gallery_dialer_toast">Gallery: the dialer would open with 112 (it never calls by itself).</string>
+    <string name="gallery_section_main">Family map (Main)</string>
+    <string name="gallery_section_crash">Accident countdown (CrashAlert)</string>
+    <string name="gallery_section_trip">Trip to past (TripToPast)</string>
+    <string name="gallery_section_family">What family sees (FamilyAlert)</string>
+    <string name="gallery_section_sharing">Sharing &amp; privacy (Sharing)</string>
+    <string name="gallery_section_other">Other screens</string>
+    <string name="gallery_home">Family map</string>
+    <string name="gallery_home_alert">Family map with an active alert</string>
+    <string name="gallery_home_loading">Family map, loading</string>
+    <string name="gallery_home_no_family">Family map, not in a family yet</string>
+    <string name="gallery_home_offline">Family map, server unreachable</string>
+    <string name="gallery_countdown">Countdown, walking (15 s, live)</string>
+    <string name="gallery_countdown_vehicle">Countdown, driving (20 s, live)</string>
+    <string name="gallery_sent">Help is on the way</string>
+    <string name="gallery_cancelled">Cancelled + feedback</string>
+    <string name="gallery_trip">Dad · last 1 hour</string>
+    <string name="gallery_trip_empty">My last hour, no trail yet</string>
+    <string name="gallery_trip_not_shared">Member without an accident</string>
+    <string name="gallery_family_alert">Accident alert (active)</string>
+    <string name="gallery_family_alert_handled">Accident alert, marked handled</string>
+    <string name="gallery_family_alert_no_location">SOS alert, no location yet</string>
+    <string name="gallery_family_alert_error">Alert could not be loaded</string>
+    <string name="gallery_sharing">Sharing &amp; privacy</string>
+    <string name="gallery_sharing_error">Sharing &amp; privacy, server unreachable</string>
+    <string name="gallery_contacts">Emergency contacts</string>
+    <string name="gallery_contacts_empty">Emergency contacts, empty</string>
+    <string name="gallery_contacts_form">Add contact, with a validation error</string>
+    <string name="gallery_settings">Settings</string>
+    <string name="gallery_invite">Invite code</string>
+    <string name="gallery_family_setup">Create or join a family</string>
+    <string name="gallery_permissions">Permissions &amp; battery (real checks)</string>
 </resources>

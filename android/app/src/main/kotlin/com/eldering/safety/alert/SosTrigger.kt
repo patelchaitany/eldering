@@ -11,9 +11,9 @@ import com.eldering.safety.network.IncidentKind
  * Starts a manual SOS (Home: "Hold 3 s for SOS"). Holding the button for three seconds is the confirmation, so
  * there is no countdown: the alert goes out immediately.
  *
- * `AppGraph.sosTrigger` holds the implementation. The default, [ServerOnlySosTrigger], alerts family through the
- * server only; the alert pipeline (AlertController / IncidentSender) should replace it with one that also texts
- * emergency contacts, and report that through [SosOutcome.sms].
+ * `AppGraph.sosTrigger` holds the implementation: [ControllerSosTrigger], which goes through the same alert path as
+ * an accident (AlertController → IncidentSender: upload, SMS to emergency contacts, live updates) and reports the
+ * SMS part through [SosOutcome.sms]. [ServerOnlySosTrigger] (server only, no SMS) remains for tests and tools.
  */
 fun interface SosTrigger {
     suspend fun triggerSos(): SosOutcome

@@ -20,6 +20,8 @@
     <string name="auth_password_hint">At least 8 characters</string>
     <string name="auth_show_password">Show</string>
     <string name="auth_hide_password">Hide</string>
+    <string name="auth_show_password_a11y">Show password</string>
+    <string name="auth_hide_password_a11y">Hide password</string>
     <string name="auth_submit_register">Create account</string>
     <string name="auth_submit_login">Log in</string>
     <string name="auth_switch_to_login">Already have an account? Log in</string>
@@ -58,6 +60,8 @@
     <string name="invite_share_text">Join %1$s on Eldering: open the app, choose \"Join with a code\" and enter %2$s</string>
     <string name="invite_copy">Copy</string>
     <string name="invite_copied">Copied</string>
+    <string name="invite_copy_a11y">Copy invite code</string>
+    <string name="invite_clip_label">Eldering invite code</string>
     <string name="invite_new_code">Make a new code</string>
     <string name="invite_family_created">Your family is ready. Invite people now, or later from the family map.</string>
     <string name="invite_no_family_title">You\'re not in a family yet</string>
