@@ -2,7 +2,8 @@
 <!-- Debug builds only (merged into the main manifest for the debug variant). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application>
+    <!-- Cleartext http only to 10.0.2.2 and localhost, for a local backend (eldering.debugBaseUrl). -->
+    <application android:networkSecurityConfig="@xml/network_security_config">
         <!-- UI gallery: every screen with made-up data (no server, no SMS, no dialer). Exported only so that adb can
              open it: am start -n com.eldering.safety/.debug.UiGalleryActivity, optionally with the string extra
              "screen" set to a page id (see GalleryEntry). -->

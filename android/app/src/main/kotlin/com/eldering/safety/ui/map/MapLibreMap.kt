@@ -3,6 +3,8 @@ package com.eldering.safety.ui.map
 import android.content.Context
 import android.util.Log
 import android.view.View
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -10,10 +12,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
@@ -22,14 +27,18 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.eldering.safety.data.trail.Geo
 import kotlin.coroutines.resume
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.LineLayer
@@ -47,10 +56,21 @@ private const val TAG = "ElderingMap"
 private const val LINE_INK = "#13201B"
 private const val SOURCE_PREFIX = "eldering-line-"
 
-/** Creating the MapView loads MapLibre's native library; on failure the caller shows the schematic map. */
+/** Land colour of the OpenFreeMap "liberty" style, shown while the map library loads. */
+private const val MAP_BACKGROUND = 0xFFF8F4F0
+
+/**
+ * Creating the MapView loads MapLibre's native library; on failure the caller shows the schematic map.
+ *
+ * TextureView mode, not the default SurfaceView: on a SurfaceView every window resize or stop (another activity on
+ * top, e.g. the accident countdown) makes the main thread wait until MapLibre's render thread has drawn a frame
+ * (`MapLibreSurfaceView.RenderThread.onWindowResize`). With a slow GPU that wait took seconds: the emulator ANR
+ * traces showed the countdown screen, which shares the main thread, missing its focus event and an "I'm OK" tap.
+ * The TextureView renderer only signals its thread on resize. It also clips to the card's rounded corners.
+ */
 private fun createMapView(context: Context): MapView? = try {
     MapLibre.getInstance(context.applicationContext)
-    MapView(context).apply {
+    MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true)).apply {
         // Not navigable by TalkBack; the screens list the same information, and markers are Compose nodes.
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
@@ -61,6 +81,46 @@ private fun createMapView(context: Context): MapView? = try {
 
 @Composable
 internal fun MapLibreMap(
+    lines: List<MapPolyline>,
+    markers: List<MapMarker>,
+    camera: CameraRequest?,
+    contentPadding: PaddingValues,
+    attributionBottomInset: Dp,
+    fallback: @Composable () -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    // The native library loads on a background thread (MapWarmUp); until then only the map's background shows.
+    // The MapView itself (NativeMapView: renderer, file sources) has to be built on the main thread and takes long
+    // on a slow phone (ANR traces: NativeMapView.<init> from FamilyMapCard, several seconds on a loaded emulator).
+    // So it is built only once this screen is resumed and has drawn a frame: never while the window is stopped or
+    // in the middle of an activity switch (the accident countdown shares this main thread and must get its focus
+    // and its "I'm OK" tap).
+    val ready by produceState<Boolean?>(null) {
+        val ok = MapWarmUp.ready(context)
+        if (ok) {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                withFrameNanos { }
+                delay(MAP_CREATE_SETTLE_MS)
+                value = true
+                awaitCancellation()
+            }
+        } else {
+            value = false
+        }
+    }
+    when (ready) {
+        null -> Box(Modifier.fillMaxSize().background(Color(MAP_BACKGROUND)))
+        false -> fallback()
+        true -> LoadedMapLibreMap(lines, markers, camera, contentPadding, attributionBottomInset, fallback)
+    }
+}
+
+/** After the screen is resumed and drawn, wait this long (pending input and focus events go first) before the map. */
+private const val MAP_CREATE_SETTLE_MS = 150L
+
+@Composable
+private fun LoadedMapLibreMap(
     lines: List<MapPolyline>,
     markers: List<MapMarker>,
     camera: CameraRequest?,
@@ -154,7 +214,7 @@ internal fun MapLibreMap(
         if (request.animate) m.animateCamera(update, 600) else m.moveCamera(update)
     }
 
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+    Box(Modifier.fillMaxSize()) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
         MarkerOverlay(markers, projector)
     }

@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Activity Recognition Transition API registration (docs/research/android-background.md §5). */
 object TransitionRegistrar {
@@ -121,13 +122,14 @@ class BootReceiver : BroadcastReceiver() {
         if (action != Intent.ACTION_BOOT_COMPLETED && action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         val armed = ProtectionPrefs.isArmed(ctx)
         Log.i("BootReceiver", "$action: protection ${if (armed) "armed, starting" else "not armed"}")
-        if (!armed) return
-        SafetyService.start(ctx, reason = if (action == Intent.ACTION_BOOT_COMPLETED) "boot" else "updated")
-        if (!TransitionRegistrar.hasPermission(ctx)) return
+        if (armed) SafetyService.start(ctx, reason = if (action == Intent.ACTION_BOOT_COMPLETED) "boot" else "updated")
+        val registerTransitions = armed && TransitionRegistrar.hasPermission(ctx)
         val pending = goAsync() // ~10 s budget for the Play services call
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             try {
-                TransitionRegistrar.register(ctx)
+                // An alert or "I'm safe now" stored but never scheduled (the phone died mid-send) goes out now.
+                withTimeoutOrNull(2_000) { runCatching { ctx.appGraph.incidentRepository.scheduleIfPending() } }
+                if (registerTransitions) TransitionRegistrar.register(ctx)
             } finally {
                 pending.finish()
             }
@@ -136,29 +138,42 @@ class BootReceiver : BroadcastReceiver() {
 }
 
 /**
- * Keep-alive heartbeat while still (inexact allow-while-idle alarm; docs/research/android-background.md §4.4),
- * so a still viewer still learns about a family member's accident through the heartbeat's `pending_alerts`.
+ * Service alarms (inexact, allowed while idle; docs/research/android-background.md §4.4):
+ * - keep-alive ([ACTION]) while STILL: drains the sensor FIFO before it wraps (≤ ½ its depth, the STILL tier has
+ *   no other wake-up) and sends the heartbeat / polls family alerts when due, so a still viewer still learns about
+ *   a family member's accident;
+ * - mode check ([ACTION_MODE_CHECK]): one-shot at the moment a speed-inferred VEHICLE mode goes stale, so the tier
+ *   drops even when no location callback arrives (indoors, garage).
+ *
+ * Never holds the broadcast for network I/O: the service takes its own bounded wakelock and returns at once
+ * (a background broadcast that runs past 60 s is an ANR).
  */
 class HeartbeatAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        if (intent.action != ACTION) return
         val control = ctx.appGraph.safetyRuntime.control ?: return
-        val pending = goAsync()
-        control.onKeepAliveAlarm { pending.finish() }
+        when (intent.action) {
+            ACTION -> control.onKeepAliveAlarm()
+            ACTION_MODE_CHECK -> control.onModeCheckAlarm()
+        }
     }
 
     companion object {
         const val ACTION = "com.eldering.safety.HEARTBEAT_ALARM"
+        const val ACTION_MODE_CHECK = "com.eldering.safety.MODE_CHECK_ALARM"
         private const val RC = 4001
+        private const val RC_MODE_CHECK = 4002
 
-        private fun pendingIntent(ctx: Context): PendingIntent = PendingIntent.getBroadcast(
+        private fun pendingIntent(ctx: Context, action: String = ACTION, rc: Int = RC): PendingIntent = PendingIntent.getBroadcast(
             ctx,
-            RC,
-            Intent(ctx, HeartbeatAlarmReceiver::class.java).setAction(ACTION),
+            rc,
+            Intent(ctx, HeartbeatAlarmReceiver::class.java).setAction(action),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        /** Inexact, allowed while idle (≈ every 9 min in Doze without the battery-optimization exemption). */
+        /**
+         * Inexact, allowed while idle: unrestricted with the battery-optimization exemption, otherwise about every
+         * 9 min in Doze.
+         */
         @SuppressLint("MissingPermission") // inexact alarms need no permission
         fun schedule(ctx: Context, delayMs: Long) {
             val am = ctx.getSystemService(AlarmManager::class.java) ?: return
@@ -167,6 +182,20 @@ class HeartbeatAlarmReceiver : BroadcastReceiver() {
 
         fun cancel(ctx: Context) {
             ctx.getSystemService(AlarmManager::class.java)?.cancel(pendingIntent(ctx))
+        }
+
+        @SuppressLint("MissingPermission")
+        fun scheduleModeCheck(ctx: Context, delayMs: Long) {
+            val am = ctx.getSystemService(AlarmManager::class.java) ?: return
+            am.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                SystemClock.elapsedRealtime() + delayMs.coerceAtLeast(1_000),
+                pendingIntent(ctx, ACTION_MODE_CHECK, RC_MODE_CHECK),
+            )
+        }
+
+        fun cancelModeCheck(ctx: Context) {
+            ctx.getSystemService(AlarmManager::class.java)?.cancel(pendingIntent(ctx, ACTION_MODE_CHECK, RC_MODE_CHECK))
         }
     }
 }

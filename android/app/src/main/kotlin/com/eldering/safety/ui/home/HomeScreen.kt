@@ -99,6 +99,9 @@ fun HomeRoute(onNavigate: (Route) -> Unit) {
             battery = it.batteryLevel,
             placeNamer = it.placeNamer,
             time = it.time,
+            resolveOwn = it::resolveOwnIncident,
+            phoneBook = it.familyPhoneBook,
+            refreshRecipients = { it.alertRecipients.refreshIfStale(RECIPIENTS_MAX_AGE_MS) },
         )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -116,6 +119,7 @@ fun HomeRoute(onNavigate: (Route) -> Unit) {
             onSos = { onNavigate(Route.Sos) },
             onResolveOwn = viewModel::resolveOwnIncident,
             onRetry = viewModel::retry,
+            onPhonePicked = viewModel::rememberPhone,
         ),
     )
 }
@@ -127,6 +131,8 @@ class HomeActions(
     val onSos: () -> Unit,
     val onResolveOwn: () -> Unit,
     val onRetry: () -> Unit,
+    /** "Call" had no number: the user picked [phone] for member [userId] from the address book. */
+    val onPhonePicked: (userId: String, phone: String) -> Unit = { _, _ -> },
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -482,12 +488,18 @@ private fun memberMarker(
 private fun MeCard(state: HomeUiState, actions: HomeActions) {
     val me = state.me
     val selected = state.selectedId == HomeUiState.ME
+    // Design: "Driving · 38 km/h" while moving.
+    val movement = me.activity?.let { activity ->
+        val label = stringResource(Formats.activityLabel(activity))
+        val speed = me.speedKmh?.takeIf { it >= Formats.MIN_SPEED_TO_SHOW_KMH && activity != com.eldering.safety.network.Activity.STILL }
+        if (speed != null) stringResource(R.string.home_activity_speed, label, speed) else label
+    }
     val status = when (me.sharing) {
         SharingState.PAUSED -> stringResource(R.string.home_me_paused)
         SharingState.OFF -> stringResource(R.string.home_me_not_sharing)
-        SharingState.ON -> me.activity?.let { stringResource(Formats.activityLabel(it)) } ?: stringResource(R.string.home_me_sharing)
+        SharingState.ON -> movement ?: stringResource(R.string.home_me_sharing)
         // Not loaded yet: show movement if known, never claim "Sharing".
-        null -> me.activity?.let { stringResource(Formats.activityLabel(it)) } ?: "—"
+        null -> movement ?: "—"
     }
     val place = me.place?.let { stringResource(R.string.home_near_place, it) }
         ?: if (me.position == null) stringResource(R.string.home_me_no_position) else stringResource(R.string.home_location_known)
@@ -529,6 +541,7 @@ private fun MeCard(state: HomeUiState, actions: HomeActions) {
 @Composable
 private fun MemberCard(member: MemberUi, nowMs: Long, selected: Boolean, actions: HomeActions) {
     val context = LocalContext.current
+    val callPerson = com.eldering.safety.ui.platform.rememberCallPerson { phone -> actions.onPhonePicked(member.userId, phone) }
     val palette = Eldering.palette
     val status = when (member.visibility) {
         MemberVisibility.LIVE, MemberVisibility.LIVE_NO_FIX -> {
@@ -582,7 +595,7 @@ private fun MemberCard(member: MemberUi, nowMs: Long, selected: Boolean, actions
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
             DesignButton(
                 stringResource(R.string.action_call),
-                { ExternalIntents.dial(context, member.phone) },
+                { callPerson(member.phone) },
                 colors = DesignButtons.outline(),
                 height = 44.dp,
                 shape = RoundedCornerShape(12.dp),
@@ -713,6 +726,16 @@ private fun FamilyAlertBanner(alert: IncidentSummaryDto, onOpen: () -> Unit) {
 @Composable
 private fun OwnIncidentBanner(onResolve: () -> Unit) {
     val palette = Eldering.palette
+    var confirm by rememberSaveable { mutableStateOf(false) }
+    if (confirm) {
+        com.eldering.safety.ui.alert.SafeNowConfirmation(
+            onConfirm = {
+                confirm = false
+                onResolve()
+            },
+            onDismiss = { confirm = false },
+        )
+    }
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = palette.alertContainer,
@@ -725,7 +748,7 @@ private fun OwnIncidentBanner(onResolve: () -> Unit) {
             Text(stringResource(R.string.home_own_incident_title), style = Eldering.type.bodySmallStrong, color = palette.alertText)
             DesignButton(
                 stringResource(R.string.alert_safe_now),
-                onResolve,
+                { confirm = true },
                 colors = DesignButtons.ink(),
                 height = 48.dp,
                 modifier = Modifier.fillMaxWidth(),
@@ -776,3 +799,6 @@ private fun AlertsSheet(alerts: List<IncidentSummaryDto>, onOpen: (String) -> Un
 }
 
 private const val LIVE_THRESHOLD_MS = 90_000L
+
+/** Home refreshes the alert-recipient cache at most this often while it is open. */
+private const val RECIPIENTS_MAX_AGE_MS = 10 * 60_000L

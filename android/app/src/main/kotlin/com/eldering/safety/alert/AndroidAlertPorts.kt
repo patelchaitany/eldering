@@ -29,6 +29,7 @@ import com.eldering.safety.data.trail.TrailPoint
 import com.eldering.safety.network.IncidentKind
 import com.eldering.safety.service.ServiceNotifications
 import com.eldering.safety.ui.platform.ExternalIntents
+import java.util.concurrent.Executors
 
 /** Android side of [AlertUi]: full-screen-intent notification, [AccidentAlertActivity], alarm sound, dialer. */
 class AndroidAlertUi(private val context: Context) : AlertUi {
@@ -50,6 +51,11 @@ class AndroidAlertUi(private val context: Context) : AlertUi {
     override fun showSent(alert: ActiveAlert) = AlertNotifications.showSent(context, alert)
 
     override fun dismiss(alert: ActiveAlert) = AlertNotifications.cancel(context)
+
+    override fun clearStale() {
+        alarm.stop()
+        AlertNotifications.cancel(context)
+    }
 
     override fun startAlarm() = alarm.start()
 
@@ -85,7 +91,11 @@ object AlertNotifications {
         }
         ServiceNotifications.ensureChannels(ctx)
         val open = openIntent(ctx)
-        val channel = if (quiet) ServiceNotifications.CH_ALERT_STATUS else ServiceNotifications.CH_ALARM
+        // A blocked alarm channel (importance "none") would swallow the countdown: fall back to the status channel,
+        // which at least puts "I'm OK" in the notification shade.
+        val alarmChannel = ServiceNotifications.channelEnabled(ctx, ServiceNotifications.CH_ALARM)
+        if (!alarmChannel) Log.w("AlertNotifications", "The accident alarm channel is blocked: showing the countdown without heads-up")
+        val channel = if (quiet || !alarmChannel) ServiceNotifications.CH_ALERT_STATUS else ServiceNotifications.CH_ALARM
         val b = NotificationCompat.Builder(ctx, channel)
             .setSmallIcon(R.drawable.ic_stat_alert)
             .setContentTitle(ctx.getString(if (alert.kind == IncidentKind.SOS) R.string.alert_notif_title_sos else R.string.alert_notif_title_possible))
@@ -147,13 +157,33 @@ object AlertNotifications {
 /**
  * Looping alarm sound (USAGE_ALARM, plays in silent mode) and vibration for the countdown. One instance per
  * process; [start] and [stop] are idempotent.
+ *
+ * Both return at once: the media and vibrator calls run on one background thread, in call order. Creating a ringtone
+ * can take seconds on a loaded phone (seen: 26 s on an emulator under memory pressure); the countdown timer and an
+ * "I'm OK" on the main thread must never wait for it.
  */
 class AlarmPlayer(private val context: Context) {
+    private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "eldering-alarm").apply { isDaemon = true } }
+
+    /** The latest request; a start that finishes after a later stop is undone at once. */
+    @Volatile
+    private var wanted = false
+
+    // Alarm thread only.
     private var ringtone: Ringtone? = null
     private var vibrating = false
 
-    @Synchronized
     fun start() {
+        wanted = true
+        executor.execute { if (wanted) startNow() }
+    }
+
+    fun stop() {
+        wanted = false
+        executor.execute { stopNow() }
+    }
+
+    private fun startNow() {
         if (ringtone != null || vibrating) return
         try {
             val uri = RingtoneManager.getActualDefaultRingtoneUri(context, RingtoneManager.TYPE_ALARM)
@@ -172,23 +202,24 @@ class AlarmPlayer(private val context: Context) {
             ringtone = null
         }
         try {
-            val vibrator = vibrator() ?: return
-            if (!vibrator.hasVibrator()) return
-            val effect = VibrationEffect.createWaveform(longArrayOf(0, 800, 400), 0)
-            if (Build.VERSION.SDK_INT >= 33) {
-                vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
+            val vibrator = vibrator()
+            if (vibrator != null && vibrator.hasVibrator()) {
+                val effect = VibrationEffect.createWaveform(longArrayOf(0, 800, 400), 0)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
+                }
+                vibrating = true
             }
-            vibrating = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "Vibration unavailable: ${e.javaClass.simpleName}")
         }
+        if (!wanted) stopNow() // "I'm OK" arrived while the sound was being set up
     }
 
-    @Synchronized
-    fun stop() {
+    private fun stopNow() {
         try {
             ringtone?.stop()
         } catch (e: RuntimeException) {
@@ -227,6 +258,31 @@ class PowerWakeHold(context: Context) : WakeHold {
 
     override fun release() {
         if (lock.isHeld) lock.release()
+    }
+}
+
+/** [AlertStore] in a small SharedPreferences file, written synchronously (a process may die right after). */
+class PrefsAlertStore(context: Context) : AlertStore {
+    private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+    override fun load(): PersistedAlert? = PersistedAlert.decode(prefs.getString(KEY, null))
+
+    @SuppressLint("ApplySharedPref") // must be on disk before the process can die
+    override fun save(alert: PersistedAlert) {
+        prefs.edit().putString(KEY, PersistedAlert.encode(alert)).commit()
+    }
+
+    @SuppressLint("ApplySharedPref")
+    override fun clear() {
+        if (prefs.contains(KEY)) prefs.edit().remove(KEY).commit()
+    }
+
+    /** Cheap check for the app start: is there an alert to resume? */
+    fun hasPending(): Boolean = prefs.contains(KEY)
+
+    companion object {
+        private const val FILE = "alert_state"
+        private const val KEY = "active_alert"
     }
 }
 

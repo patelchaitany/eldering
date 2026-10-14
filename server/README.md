@@ -45,6 +45,10 @@ make down      # `docker compose down -v` also deletes the data volume
 
 The API listens on `127.0.0.1:8095` only. Postgres is never published.
 
+For the Android **emulator**, set `PUBLIC_BASE_URL=http://10.0.2.2:8095` in `.env` (share links then open on the
+emulator; the emulator reaches the host's loopback as `10.0.2.2`), run `make image` and `docker compose up -d`
+again, and build the debug app with `eldering.debugBaseUrl=http://10.0.2.2:8095` in `android/local.properties`.
+
 ## Tests
 
 ```sh
@@ -97,7 +101,8 @@ matrix.
 ```sh
 make up && make e2e   # local stack; also writes dist/e2e-matrix.md
 make e2e-rls          # only the SQL checks
-make e2e-clean        # delete the e2e-sec-* accounts (and their families)
+make e2e-clean        # delete all e2e-*@example.test accounts (this suite, the Android
+                      # LiveServerContractTest, ad-hoc runs) and their families
 ```
 
 Against the server (behind nginx, so leave `E2E_TRUSTED_IP_HEADER` unset; setup then waits out
@@ -198,6 +203,10 @@ can see the resource but may not perform the action. Unknown JSON fields are ign
 - `Settings` = `{sharing_state, paused_until, always_alert_on_accident, effective_sharing_state}`
 - `Family` = `{id,name,role,joined_at,member_count,created_at}`
 - `IncidentSummary` = `{id,user_id,display_name,kind,status,detected_at,lat,lng,last_location:{lat,lng,recorded_at,accuracy_m}|null,share_expires_at,resolved_at,resolution,is_mine,my_ack}`
+- Share feed: `incident_location.accuracy_m` is the accuracy of the trail fix at exactly the incident's
+  coordinates (closest in time to `detected_at`); `POST /v1/incidents` has no accuracy of its own, so it
+  is `null` (unknown) for an incident sent with `lat`/`lng` only. Without JavaScript the share page shows
+  times in UTC plus a relative age ("4 min ago"); `share.js` switches them to the viewer's local time.
 - `activity` is one of `still, walking, running, cycling, vehicle, unknown` (case-insensitive).
 - Heartbeats with an older `recorded_at` never overwrite a newer stored point. With sharing `off`,
   the server stores no location and deletes the one it has.

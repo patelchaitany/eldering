@@ -33,6 +33,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -77,6 +78,7 @@ class IncidentSenderTest {
     private var online = true
     private var contacts = listOf(contact("Ravi", "+15550100001"), contact("Meera", "+15550100002"))
     private var keys = 0
+    private var recipientsGate: CompletableDeferred<Unit>? = null
     private lateinit var db: ElderingDatabase
     private lateinit var sessions: SessionStore
     private lateinit var trail: TrailStore
@@ -112,7 +114,10 @@ class IncidentSenderTest {
     private fun sender(config: IncidentSender.Config = IncidentSender.Config(liveIntervalMs = 60_000)) = IncidentSender(
         trailStore = trail,
         incidents = incidents,
-        recipients = { contacts },
+        recipients = {
+            recipientsGate?.await()
+            contacts
+        },
         sms = sms,
         landmarks = { lat, lng ->
             geocoded += lat to lng
@@ -125,7 +130,7 @@ class IncidentSenderTest {
         config = config,
     )
 
-    private fun alert(kind: IncidentKind = IncidentKind.FALL) = ActiveAlert(
+    private fun alert(kind: IncidentKind = IncidentKind.FALL, key: String = "key-1") = ActiveAlert(
         id = 1,
         kind = kind,
         detectedAtMs = detectedAt,
@@ -134,6 +139,7 @@ class IncidentSenderTest {
         countdownEndsAtMs = detectedAt + 25_000,
         event = DetectionEvent(EventKind.FALL, 0.93f, 1L, mapOf("peak_g" to 4.5f, "speed_before" to 1.3f), "fall: impact + lying still"),
         emergencyContactCount = contacts.size,
+        incidentKey = key,
     )
 
     private suspend fun frozen() = trail.snapshot(detectedAt)
@@ -148,7 +154,7 @@ class IncidentSenderTest {
         // A point recorded during the countdown is part of the upload too.
         trail.record(TrailPoint(detectedAt + 5_000, 48.1381, 11.5701, 6f), TrailSamplingPolicy.ALERTING)
 
-        val result = sender().dispatch(alert(), frozen()) {}
+        val result = sender().dispatch(alert(), frozen(), DispatchHooks())
 
         val report = result.report as IncidentRepository.ReportResult.Sent
         assertEquals("https://safety.example/s/abcDEF123_-xyz", report.shareUrl)
@@ -184,7 +190,7 @@ class IncidentSenderTest {
         server.enqueue(MockResponse.Builder().code(503).build())
         online = false
 
-        val result = sender().dispatch(alert(), frozen()) {}
+        val result = sender().dispatch(alert(), frozen(), DispatchHooks())
 
         assertTrue(result.report is IncidentRepository.ReportResult.Queued)
         assertEquals(1, scheduled.get())
@@ -203,7 +209,7 @@ class IncidentSenderTest {
         val started = System.nanoTime()
         sms.onSend = { firstSms.complete(System.nanoTime()) }
 
-        val result = sender(IncidentSender.Config(liveIntervalMs = 60_000, shareUrlWaitMs = 300)).dispatch(alert(), frozen()) {}
+        val result = sender(IncidentSender.Config(liveIntervalMs = 60_000, shareUrlWaitMs = 300)).dispatch(alert(), frozen(), DispatchHooks())
 
         val smsAfterMs = (withTimeout(5_000) { firstSms.await() } - started) / 1_000_000
         assertTrue("SMS went out after $smsAfterMs ms", smsAfterMs < 1_800)
@@ -215,7 +221,7 @@ class IncidentSenderTest {
     fun `signed out - nothing is uploaded, contacts are still texted`() = runBlocking {
         sessions.clear()
 
-        val result = sender().dispatch(alert(IncidentKind.SOS), frozen()) {}
+        val result = sender().dispatch(alert(IncidentKind.SOS), frozen(), DispatchHooks())
 
         assertEquals(IncidentRepository.ReportResult.NotSignedIn, result.report)
         assertNull(result.incidentKey)
@@ -229,7 +235,7 @@ class IncidentSenderTest {
     fun `no emergency contacts - no SMS`() = runBlocking {
         contacts = emptyList()
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
-        val result = sender().dispatch(alert(), frozen()) {}
+        val result = sender().dispatch(alert(), frozen(), DispatchHooks())
         assertEquals(SmsOutcome.NO_CONTACTS, result.sms)
         assertTrue(sms.sent.isEmpty())
     }
@@ -238,15 +244,15 @@ class IncidentSenderTest {
     fun `SMS outcome reflects real sends, permission problems and failures`() = runBlocking {
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         sms.result = SmsResult.Queued(2)
-        assertEquals(SmsOutcome.SENT, sender().dispatch(alert(), frozen()) {}.sms)
+        assertEquals(SmsOutcome.SENT, sender().dispatch(alert(key = "a"), frozen(), DispatchHooks()).sms)
 
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         sms.result = SmsResult.NoPermission
-        assertEquals(SmsOutcome.NO_PERMISSION, sender().dispatch(alert(), frozen()) {}.sms)
+        assertEquals(SmsOutcome.NO_PERMISSION, sender().dispatch(alert(key = "b"), frozen(), DispatchHooks()).sms)
 
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         sms.result = SmsResult.Failed("RIL")
-        assertEquals(SmsOutcome.FAILED, sender().dispatch(alert(), frozen()) {}.sms)
+        assertEquals(SmsOutcome.FAILED, sender().dispatch(alert(key = "c"), frozen(), DispatchHooks()).sms)
     }
 
     @Test
@@ -254,7 +260,7 @@ class IncidentSenderTest {
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         val s = sender(IncidentSender.Config(liveIntervalMs = 200, liveDurationMs = 60_000))
         val ended = CompletableDeferred<String>()
-        val result = s.dispatch(alert(), frozen()) { ended.complete(it) }
+        val result = s.dispatch(alert(), frozen(), DispatchHooks(onLiveEnded = { ended.complete(it) }))
         take() // create
         assertEquals(setOf("key-1"), s.liveIncidents)
 
@@ -279,7 +285,7 @@ class IncidentSenderTest {
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         val s = sender(IncidentSender.Config(liveIntervalMs = 150, liveDurationMs = 60_000))
         val ended = CompletableDeferred<String>()
-        s.dispatch(alert(), frozen()) { ended.complete(it) }
+        s.dispatch(alert(), frozen(), DispatchHooks(onLiveEnded = { ended.complete(it) }))
         take()
 
         server.enqueue(errorJson(409, "incident_closed"))
@@ -295,8 +301,103 @@ class IncidentSenderTest {
     fun `live updates end after their duration`() = runBlocking {
         server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
         val ended = CompletableDeferred<String>()
-        sender(IncidentSender.Config(liveIntervalMs = 50, liveDurationMs = 150)).dispatch(alert(), frozen()) { ended.complete(it) }
+        sender(IncidentSender.Config(liveIntervalMs = 50, liveDurationMs = 150)).dispatch(alert(), frozen(), DispatchHooks(onLiveEnded = { ended.complete(it) }))
         assertEquals("key-1", withTimeout(5_000) { ended.await() })
+    }
+
+    @Test
+    fun `I'm OK before the SMS step - no contact is texted`() = runBlocking {
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        val reported = CopyOnWriteArrayList<SmsOutcome>()
+
+        val result = sender().dispatch(alert(), frozen(), DispatchHooks(stillWanted = { false }, onSmsDone = { reported += it }))
+
+        assertEquals(SmsOutcome.CANCELLED, result.sms)
+        assertTrue(sms.sent.isEmpty())
+        assertEquals(listOf(SmsOutcome.CANCELLED), reported)
+        assertTrue("the upload still happens (it is resolved right after)", result.report is IncidentRepository.ReportResult.Sent)
+    }
+
+    @Test
+    fun `I'm OK in the middle of texting stops the remaining texts`() = runBlocking {
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        var wanted = true
+        sms.onSend = { wanted = false } // "I'm OK" arrives while the first SMS is being handed over
+
+        val result = sender().dispatch(alert(), frozen(), DispatchHooks(stillWanted = { wanted }))
+
+        assertEquals(SmsOutcome.DRY_RUN, result.sms)
+        assertEquals(listOf("+15550100001"), sms.sent.map { it.first })
+    }
+
+    @Test
+    fun `the follow-up after I'm safe now goes to the contacts that were texted`() = runBlocking {
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        val s = sender()
+        s.dispatch(alert(), frozen(), DispatchHooks())
+        contacts = listOf(contact("Someone new", "+15550100009")) // changed since: the follow-up goes to who was texted
+
+        s.notifySafe(alert(), smsWentOut = true)
+
+        val followUps = sms.sent.drop(2)
+        assertEquals(listOf("+15550100001", "+15550100002"), followUps.map { it.first })
+        assertTrue(followUps.first().second, followUps.first().second.startsWith("ELDERING UPDATE: Asha says they are OK now"))
+        s.notifySafe(alert(), smsWentOut = false)
+        assertEquals("once only", 4, sms.sent.size)
+    }
+
+    @Test
+    fun `a cancelled caller aborts before anything is uploaded instead of passing as no contacts`() = runBlocking {
+        recipientsGate = CompletableDeferred()
+        val call = scope.async { sender().dispatch(alert(), frozen(), DispatchHooks()) }
+        kotlinx.coroutines.delay(300)
+        call.cancel()
+
+        val error = runCatching { call.await() }.exceptionOrNull()
+        assertTrue("$error", error is kotlinx.coroutines.CancellationException)
+        kotlinx.coroutines.delay(300)
+        assertEquals("no upload started", 0, server.requestCount)
+        assertTrue(sms.sent.isEmpty())
+    }
+
+    @Test
+    fun `a send resumed after a restart reuses its incident and does not text again`() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(503).build())
+        sender().dispatch(alert(), frozen(), DispatchHooks())
+        take()
+        val texts = sms.sent.size
+
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        val resumed = sender().dispatch(alert(), frozen(), DispatchHooks(smsDone = SmsOutcome.DRY_RUN))
+
+        assertEquals(SmsOutcome.DRY_RUN, resumed.sms)
+        assertEquals(texts, sms.sent.size)
+        assertTrue(resumed.report is IncidentRepository.ReportResult.Sent)
+        assertEquals("same incident, same idempotency key", "key-1", take().headers["Idempotency-Key"])
+        assertEquals("one create row only: nothing else queued", 0, db.outboxDao().pendingCount(com.eldering.safety.testing.USER_ID))
+        assertEquals(2, server.requestCount)
+        assertEquals(OwnIncidentStatus.ACTIVE, incidents.ownIncident("key-1")!!.status)
+    }
+
+    @Test
+    fun `live updates resume after a restart for an open incident only`() = runBlocking {
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        sender().dispatch(alert(), frozen(), DispatchHooks())
+        take()
+
+        // New process: a fresh sender resumes the hour (points pushed before the restart are simply sent again).
+        trail.record(TrailPoint(time.nowMillis(), 48.1390, 11.5702, 5f), TrailSamplingPolicy.ALERTING)
+        server.enqueue(json(200, """{"accepted":1}"""))
+        val fresh = sender(IncidentSender.Config(liveIntervalMs = 200, liveDurationMs = 60_000))
+        val report = fresh.resumeLive(alert(), liveEndsAtMs = time.nowMillis() + 60_000) {}
+        assertTrue(report is IncidentRepository.ReportResult.Sent)
+        assertEquals(setOf("key-1"), fresh.liveIncidents)
+        assertEquals("/v1/incidents/$INCIDENT_ID/trail", take().url.encodedPath)
+
+        server.enqueue(json(200, ServerSamples.INCIDENT_SUMMARY))
+        fresh.resolve("key-1", Resolution.USER_OK)
+        assertNull("closed: nothing to resume", sender().resumeLive(alert(), liveEndsAtMs = time.nowMillis() + 60_000) {})
+        assertNull("unknown incident", sender().resumeLive(alert(key = "nope"), liveEndsAtMs = time.nowMillis() + 60_000) {})
     }
 
     @Test

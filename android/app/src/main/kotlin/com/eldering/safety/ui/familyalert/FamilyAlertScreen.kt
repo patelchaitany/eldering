@@ -37,11 +37,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +53,7 @@ import com.eldering.safety.network.AckState
 import com.eldering.safety.network.IncidentKind
 import com.eldering.safety.network.IncidentStatus
 import com.eldering.safety.network.Resolution
+import com.eldering.safety.service.ServiceNotifications
 import com.eldering.safety.ui.common.Formats
 import com.eldering.safety.ui.common.IncidentDetailsReader
 import com.eldering.safety.ui.common.appViewModel
@@ -77,19 +80,29 @@ import com.eldering.safety.ui.map.MapMarker
 import com.eldering.safety.ui.map.MapPolyline
 import com.eldering.safety.ui.navigation.Route
 import com.eldering.safety.ui.platform.ExternalIntents
+import com.eldering.safety.ui.platform.rememberCallPerson
 import com.eldering.safety.ui.theme.Eldering
 import com.eldering.safety.ui.theme.MemberColors
 import kotlinx.coroutines.delay
 
 @Composable
 fun FamilyAlertRoute(incidentId: String, onBack: () -> Unit, onNavigate: (Route) -> Unit) {
-    val viewModel = appViewModel(key = "family-alert-$incidentId") {
-        FamilyAlertViewModel(incidentId, it.incidentRepository, it.locationRepository, it.contactsRepository, it.placeNamer, it.time)
+    val viewModel = appViewModel(key = "family-alert-$incidentId") { graph ->
+        FamilyAlertViewModel(
+            incidentId, graph.incidentRepository, graph.locationRepository, graph.contactsRepository, graph.placeNamer, graph.time,
+            phoneBook = graph.familyPhoneBook,
+            myUserId = { graph.sessionStore.current()?.userId },
+        )
     }
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
     LaunchedEffect(viewModel, lifecycleOwner) {
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) { viewModel.pollWhileVisible() }
+    }
+    // The notification (a sticky heads-up: it has a full-screen intent) has done its job once this screen is open.
+    LaunchedEffect(incidentId) {
+        NotificationManagerCompat.from(context).cancel(ServiceNotifications.familyNotificationId(incidentId))
     }
     FamilyAlertScreen(
         state = state,
@@ -100,6 +113,7 @@ fun FamilyAlertRoute(incidentId: String, onBack: () -> Unit, onNavigate: (Route)
         onMarkSafe = viewModel::markSafe,
         onDismissError = viewModel::dismissError,
         onRetry = viewModel::retry,
+        onPhonePicked = viewModel::rememberPhone,
     )
 }
 
@@ -113,6 +127,7 @@ fun FamilyAlertScreen(
     onMarkSafe: () -> Unit,
     onDismissError: () -> Unit,
     onRetry: () -> Unit,
+    onPhonePicked: (String) -> Unit = {},
 ) {
     val palette = Eldering.palette
     val detail = state.detail
@@ -140,6 +155,7 @@ fun FamilyAlertScreen(
         return
     }
     val context = LocalContext.current
+    val callPerson = rememberCallPerson(onPhonePicked)
     val clock = rememberClock()
     // Ticks every second for "updated 12 s ago".
     val now by produceState(nowMs()) {
@@ -309,15 +325,17 @@ fun FamilyAlertScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     DesignButton(
                         stringResource(R.string.family_alert_call_person, name),
-                        { ExternalIntents.dial(context, state.phone) },
+                        { callPerson(state.phone) },
                         height = 56.dp,
                         textStyle = Eldering.type.buttonLarge,
+                        contentDescription = if (state.phone == null) stringResource(R.string.family_alert_call_pick_a11y, name) else null,
                         modifier = Modifier.weight(1f),
                     )
                     DesignButton(
                         stringResource(R.string.alert_call_emergency),
                         { ExternalIntents.dialEmergency(context) },
-                        colors = DesignButtons.alert(),
+                        // Once the alert is over, 112 is no longer the obvious next step.
+                        colors = if (state.isActive) DesignButtons.alert() else DesignButtons.outline(),
                         height = 56.dp,
                         textStyle = Eldering.type.buttonLarge,
                         contentDescription = stringResource(R.string.alert_call_emergency_a11y),
@@ -354,7 +372,11 @@ fun FamilyAlertScreen(
                     val mode = IncidentDetailsReader.mode(detail.details)
                     val before = Formats.speedKmh(IncidentDetailsReader.speedBeforeMps(detail.details))
                     val after = Formats.speedKmh(IncidentDetailsReader.speedAfterMps(detail.details))
-                    val also = IncidentDetailsReader.alsoAlerted(detail.details)
+                    val you = stringResource(R.string.family_alert_you)
+                    val resources = LocalResources.current
+                    val also = IncidentDetailsReader.alsoAlertedFor(detail.details, state.myUserId, you) { n ->
+                        resources.getQuantityString(R.plurals.family_alert_contacts, n, n)
+                    }
                     DetailRow(
                         stringResource(R.string.family_alert_detected),
                         stringResource(detectedLabel(detail.kind, mode)),
@@ -389,14 +411,23 @@ fun FamilyAlertScreen(
                         name,
                     ),
                 )
-                else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val onWay = detail.myAck == AckState.ON_MY_WAY
+                detail.myAck == AckState.ON_MY_WAY -> {
+                    // Design: a status line replaces "I'm going there"; "<name> is safe" stays available.
+                    SuccessBanner(stringResource(R.string.family_alert_on_way_banner, name))
                     DesignButton(
-                        stringResource(if (onWay) R.string.family_alert_on_my_way_done else R.string.family_alert_on_my_way),
+                        stringResource(R.string.family_alert_is_safe, name),
+                        { confirmSafe = true },
+                        colors = DesignButtons.outline(),
+                        enabled = !state.acting,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                else -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    DesignButton(
+                        stringResource(R.string.family_alert_on_my_way),
                         onMyWay,
-                        colors = if (onWay) DesignButtons.safe() else DesignButtons.outline(),
-                        enabled = !onWay && !state.acting,
-                        leadingIcon = if (onWay) ElderingIcons.Check else null,
+                        colors = DesignButtons.outline(),
+                        enabled = !state.acting,
                         modifier = Modifier.weight(1f),
                     )
                     DesignButton(

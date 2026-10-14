@@ -36,3 +36,7 @@ cd android
 echo "eldering.baseUrl=https://your-server.example.com" >> local.properties
 ./gradlew :detection:test :app:assembleDebug
 ```
+`eldering.baseUrl` must be https; release builds always use it. To point a **debug** build at the local server
+on the emulator, also set `eldering.debugBaseUrl=http://10.0.2.2:8095` (and `PUBLIC_BASE_URL=http://10.0.2.2:8095`
+in `server/.env`, so share links open on the emulator). Debug builds allow cleartext http only to `10.0.2.2` and
+`localhost` (`localhost` works on a USB phone after `adb reverse tcp:8095 tcp:8095`); every other host stays https.

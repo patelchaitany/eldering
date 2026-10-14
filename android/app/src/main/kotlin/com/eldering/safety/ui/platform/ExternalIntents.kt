@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
+import com.eldering.safety.service.ServiceNotifications
 import java.util.Locale
 
 /**
@@ -64,6 +66,17 @@ object ExternalIntents {
         context,
         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
     ) || openAppDetails(context)
+
+    /** The accident alarm channel's settings (blocked channel), or the app's notification settings if all are off. */
+    fun openAlarmChannelSettings(context: Context): Boolean {
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return openNotificationSettings(context)
+        return start(
+            context,
+            Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                .putExtra(Settings.EXTRA_CHANNEL_ID, ServiceNotifications.CH_ALARM),
+        ) || openNotificationSettings(context)
+    }
 
     /** Android 14+: the per-app "full screen notifications" page (needed for the accident countdown over the lock screen). */
     fun openFullScreenIntentSettings(context: Context): Boolean =

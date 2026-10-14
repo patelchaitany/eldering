@@ -11,6 +11,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.LocationManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -23,6 +25,7 @@ import com.eldering.safety.MainActivity
 import com.eldering.safety.R
 import com.eldering.safety.network.IncidentKind
 import com.eldering.safety.network.IncidentSummaryDto
+import com.eldering.safety.ui.platform.ExternalIntents
 
 /** Foreground-service types we may legally claim right now (docs/research/android-background.md §2.3). */
 object FgsTypes {
@@ -63,7 +66,9 @@ object ServiceNotifications {
 
     /** The same alert without heads-up: used while the countdown screen itself is in front, and once sent. */
     const val CH_ALERT_STATUS = "accident_status_v1"
-    const val CH_FAMILY = "family_alerts_v1"
+    /** v2: bypasses Do Not Disturb (with DND access) and sounds like an alarm; v1 is deleted. */
+    const val CH_FAMILY = "family_alerts_v2"
+    private const val CH_FAMILY_V1 = "family_alerts_v1"
 
     const val ID_ONGOING = 1001
     const val ID_PAUSED = 1002
@@ -73,6 +78,9 @@ object ServiceNotifications {
     private const val RC_OPEN_APP = 3001
     private const val RC_BATTERY = 3002
     private const val RC_RESUME = 3003
+    private const val RC_ALARM_CHANNEL = 3004
+    private const val RC_FAMILY_CALL_112 = 3005
+    private const val RC_FAMILY_CALL_BASE = 5000
 
     fun ensureChannels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
@@ -101,16 +109,30 @@ object ServiceNotifications {
                 NotificationChannel(CH_FAMILY, ctx.getString(R.string.ch_family_name), NotificationManager.IMPORTANCE_HIGH).apply {
                     description = ctx.getString(R.string.ch_family_desc)
                     enableVibration(true)
+                    vibrationPattern = longArrayOf(0, 600, 300, 600, 300, 600)
                     lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                    // A family member's accident is the reason the app exists: heard in silent mode, through DND
+                    // where the user granted DND access.
+                    setSound(
+                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    )
+                    setBypassDnd(true)
                 },
             ),
         )
+        if (nm.getNotificationChannel(CH_FAMILY_V1) != null) nm.deleteNotificationChannel(CH_FAMILY_V1)
     }
 
     /** The low-key ongoing notification of [SafetyService]. */
     fun ongoing(ctx: Context, modeLabel: String?, signedIn: Boolean?): Notification {
         ensureChannels(ctx)
+        val alarmBlocked = !channelEnabled(ctx, CH_ALARM)
         val text = when {
+            alarmBlocked -> ctx.getString(R.string.svc_alarm_channel_off)
             signedIn == false -> ctx.getString(R.string.svc_protection_signed_out)
             modeLabel != null -> ctx.getString(R.string.svc_protection_mode, modeLabel)
             else -> null
@@ -127,7 +149,7 @@ object ServiceNotifications {
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-            .setContentIntent(openAppIntent(ctx))
+            .setContentIntent(if (alarmBlocked) alarmChannelSettingsIntent(ctx) else openAppIntent(ctx))
         if (!ignoresBatteryOptimizations(ctx)) {
             b.addAction(0, ctx.getString(R.string.svc_allow_background), batteryExemptionIntent(ctx))
         }
@@ -160,10 +182,12 @@ object ServiceNotifications {
     fun cancelPaused(ctx: Context) = NotificationManagerCompat.from(ctx).cancel(ID_PAUSED)
 
     /**
-     * A family member's accident or SOS (from the heartbeat's `pending_alerts`). Opens the "What family sees" screen.
+     * A family member's accident or SOS (from the heartbeat's `pending_alerts`). Opens the "What family sees" screen;
+     * full-screen intent where allowed (a heads-up that stays when the phone is in use), and actions to call the
+     * person ([phone], when this phone knows their number) or 112 (both ACTION_DIAL: the user presses call).
      */
     @SuppressLint("MissingPermission") // checked by canNotify()
-    fun showFamilyAlert(ctx: Context, alert: IncidentSummaryDto) {
+    fun showFamilyAlert(ctx: Context, alert: IncidentSummaryDto, phone: String? = null) {
         if (!canNotify(ctx)) return
         ensureChannels(ctx)
         val name = alert.displayName.ifBlank { ctx.getString(R.string.family_notif_public) }
@@ -185,7 +209,7 @@ object ServiceNotifications {
             .setSmallIcon(R.drawable.ic_stat_alert)
             .setContentTitle(ctx.getString(R.string.family_notif_public))
             .build()
-        val n = NotificationCompat.Builder(ctx, CH_FAMILY)
+        val b = NotificationCompat.Builder(ctx, CH_FAMILY)
             .setSmallIcon(R.drawable.ic_stat_alert)
             .setContentTitle(title)
             .setContentText(ctx.getString(R.string.family_notif_text))
@@ -197,14 +221,35 @@ object ServiceNotifications {
             .setShowWhen(true)
             .setAutoCancel(true)
             .setContentIntent(open)
-            .build()
-        NotificationManagerCompat.from(ctx).notify(familyNotificationId(alert.id), n)
+            .addAction(0, ctx.getString(R.string.family_notif_open), open)
+        if (phone != null) {
+            b.addAction(0, ctx.getString(R.string.family_notif_call_person, name), dialIntent(ctx, phone, RC_FAMILY_CALL_BASE + (alert.id.hashCode() and 0xFFF)))
+        }
+        b.addAction(0, ctx.getString(R.string.family_notif_call_emergency), dialIntent(ctx, ExternalIntents.EMERGENCY_NUMBER, RC_FAMILY_CALL_112))
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT < 34 || nm?.canUseFullScreenIntent() == true) b.setFullScreenIntent(open, true)
+        NotificationManagerCompat.from(ctx).notify(familyNotificationId(alert.id), b.build())
     }
+
+    /** ACTION_DIAL only (never places the call). */
+    private fun dialIntent(ctx: Context, number: String, requestCode: Int): PendingIntent = PendingIntent.getActivity(
+        ctx,
+        requestCode,
+        ExternalIntents.dialIntent(number).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
 
     fun familyNotificationId(incidentId: String): Int = ID_FAMILY_BASE + (incidentId.hashCode() and 0xFFFF)
 
     fun canNotify(ctx: Context): Boolean = NotificationManagerCompat.from(ctx).areNotificationsEnabled() &&
         (Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+
+    /** False if the user blocked channel [id] (importance "none"); a channel not created yet counts as enabled. */
+    fun channelEnabled(ctx: Context, id: String): Boolean =
+        NotificationManagerCompat.from(ctx).getNotificationChannelCompat(id)?.importance != NotificationManagerCompat.IMPORTANCE_NONE
+
+    /** The accident countdown can reach the user: notifications allowed and the alarm channel not blocked. */
+    fun canAlarm(ctx: Context): Boolean = canNotify(ctx) && channelEnabled(ctx, CH_ALARM)
 
     fun ignoresBatteryOptimizations(ctx: Context): Boolean =
         ctx.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(ctx.packageName) ?: false
@@ -213,6 +258,16 @@ object ServiceNotifications {
         ctx,
         RC_OPEN_APP,
         Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+
+    private fun alarmChannelSettingsIntent(ctx: Context): PendingIntent = PendingIntent.getActivity(
+        ctx,
+        RC_ALARM_CHANNEL,
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, CH_ALARM)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 

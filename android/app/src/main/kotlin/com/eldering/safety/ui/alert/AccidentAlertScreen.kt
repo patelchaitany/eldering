@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -22,18 +23,29 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -59,6 +71,7 @@ import com.eldering.safety.ui.components.ElderingIcons
 import com.eldering.safety.ui.theme.AlertScreenColors
 import com.eldering.safety.ui.theme.Eldering
 import com.eldering.safety.ui.theme.ElderingTheme
+import kotlinx.coroutines.delay
 
 /**
  * The accident countdown ("Are you OK?"), for `AccidentAlertActivity` and the in-app SOS screen.
@@ -74,11 +87,22 @@ import com.eldering.safety.ui.theme.ElderingTheme
  * val vm: AccidentAlertViewModel = viewModel(factory = AccidentAlertViewModel.factory(info, alertActions, sink))
  * setContent { ElderingTheme { AccidentAlertRoute(vm, onClose = ::finish) } }
  * ```
- * Always dark (design), keeps the screen on, and ignores Back while counting so a pocket press cannot dismiss it.
+ * Always dark (design). Keeps the display on while counting and for two minutes once sent (not for the whole live
+ * hour), closes the cancelled/feedback screen after a minute without interaction, and ignores Back while counting so
+ * a pocket press cannot dismiss it.
  */
 @Composable
-fun AccidentAlertRoute(viewModel: AccidentAlertViewModel, onClose: () -> Unit) {
+fun AccidentAlertRoute(viewModel: AccidentAlertViewModel, onClose: () -> Unit, onAutoClose: () -> Unit = onClose) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val autoClose by rememberUpdatedState(onAutoClose)
+    // "Glad you're OK" / "What happened?": closes itself after a minute without a choice, so a phone put back in a
+    // pocket does not keep the alert screen up.
+    LaunchedEffect(state.phase, state.feedback) {
+        if (state.phase == AlertPhase.CANCELLED) {
+            delay(AlertScreenTiming.AUTO_CLOSE_MS)
+            autoClose()
+        }
+    }
     AccidentAlertScreen(
         state = state,
         onImOk = viewModel::imOk,
@@ -87,6 +111,29 @@ fun AccidentAlertRoute(viewModel: AccidentAlertViewModel, onClose: () -> Unit) {
         onFeedback = viewModel::giveFeedback,
         onClose = onClose,
     )
+}
+
+/** How long the alert screen keeps the display on and stays up (battery: the display is the largest draw). */
+object AlertScreenTiming {
+    /** After the alert went out the display may sleep again after this (the live updates do not need it). */
+    const val SENT_SCREEN_ON_MS = 2 * 60_000L
+
+    /** The cancelled/feedback screen closes itself after this long without interaction. */
+    const val AUTO_CLOSE_MS = 60_000L
+
+    /**
+     * After the screen switches to "sent" (the countdown ran out: "I'm OK" becomes "Help is on the way"), taps
+     * are ignored this long. A tap meant for "I'm OK" that lands just after expiry must not hit whatever button now
+     * sits there (it once opened the dialer with 112). Not applied when the screen opens in a phase.
+     */
+    const val TAP_GUARD_MS = 1_000L
+
+    /** Display on: always while counting, for [SENT_SCREEN_ON_MS] once sent, never afterwards. */
+    fun keepScreenOn(phase: AlertPhase, msInPhase: Long): Boolean = when (phase) {
+        AlertPhase.COUNTING -> true
+        AlertPhase.SENT -> msInPhase < SENT_SCREEN_ON_MS
+        AlertPhase.CANCELLED -> false
+    }
 }
 
 @Composable
@@ -98,24 +145,74 @@ fun AccidentAlertScreen(
     onFeedback: (FeedbackChoice) -> Unit,
     onClose: () -> Unit,
 ) {
-    KeepScreenOnWithLightSystemBars()
-    // Counting: Back does nothing (the user must choose). Afterwards Back behaves like the close button.
-    BackHandler(enabled = state.phase == AlertPhase.COUNTING) {}
-    Column(
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-        modifier = Modifier
-            .fillMaxSize()
-            .background(AlertScreenColors.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 24.dp),
-    ) {
-        when (state.phase) {
-            AlertPhase.COUNTING -> CountingContent(state, onImOk, onSendNow, onCallEmergency)
-            AlertPhase.SENT -> SentContent(state, onImOk, onCallEmergency)
-            AlertPhase.CANCELLED -> CancelledContent(state, onFeedback, onClose)
+    var sentScreenOnOver by remember(state.phase) { mutableStateOf(false) }
+    LaunchedEffect(state.phase) {
+        if (state.phase == AlertPhase.SENT) {
+            delay(AlertScreenTiming.SENT_SCREEN_ON_MS)
+            sentScreenOnOver = true
         }
     }
+    LightSystemBars()
+    KeepScreenOn(AlertScreenTiming.keepScreenOn(state.phase, if (sentScreenOnOver) AlertScreenTiming.SENT_SCREEN_ON_MS else 0L))
+    // Counting: Back does nothing (the user must choose). Afterwards Back behaves like the close button.
+    BackHandler(enabled = state.phase == AlertPhase.COUNTING) {}
+    val guarded = rememberPhaseChangeTapGuard(state.phase)
+    Box(Modifier.fillMaxSize()) {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(AlertScreenColors.background)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(start = 20.dp, end = 20.dp, top = 28.dp, bottom = 24.dp),
+        ) {
+            when (state.phase) {
+                AlertPhase.COUNTING -> CountingContent(state, onImOk, onSendNow, onCallEmergency)
+                AlertPhase.SENT -> SentContent(state, onImOk, onCallEmergency)
+                AlertPhase.CANCELLED -> CancelledContent(state, onFeedback, onClose)
+            }
+        }
+        if (guarded) TapShield()
+    }
 }
+
+/**
+ * True for [AlertScreenTiming.TAP_GUARD_MS] after the screen switched to "sent" while it was showing (the countdown
+ * ran out, or "Send help now"), not when it opened in that phase. Keyed on the phase, so it is already true in the
+ * first frame of the new phase. The cancelled screen needs none: only harmless feedback buttons sit there.
+ */
+@Composable
+private fun rememberPhaseChangeTapGuard(phase: AlertPhase): Boolean {
+    val openedIn = remember { phase }
+    var guarded by remember(phase) { mutableStateOf(phase == AlertPhase.SENT && phase != openedIn) }
+    LaunchedEffect(phase) {
+        if (guarded) {
+            delay(AlertScreenTiming.TAP_GUARD_MS)
+            guarded = false
+        }
+    }
+    return guarded
+}
+
+/** Swallows every touch on the screen (an overlay above the buttons, so nothing below sees the press). */
+@Composable
+private fun BoxScope.TapShield() {
+    Box(
+        Modifier
+            .matchParentSize()
+            .testTag(TAP_SHIELD_TAG)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                    }
+                }
+            },
+    )
+}
+
+/** Test tag of the touch shield shown right after a phase change. */
+const val TAP_SHIELD_TAG = "alert-tap-shield"
 
 @Composable
 private fun ColumnScope.CountingContent(
@@ -223,6 +320,19 @@ private fun ColumnScope.SentContent(state: AccidentAlertUiState, onImOk: () -> U
         }
         Text(stringResource(R.string.alert_sharing_live), style = Eldering.type.bodySmall, color = AlertScreenColors.textMuted)
     }
+    // Deliberately not the design's order (Call 112 above "I'm safe now"): every button keeps the meaning of the one
+    // that was in its place during the countdown. A late "I'm OK" tap lands on "I'm safe now" (which asks first), and
+    // a late "Send help now" tap lands on "Call 112" (the dialer only), never the other way round.
+    var confirmSafe by rememberSaveable { mutableStateOf(false) }
+    DesignButton(
+        text = stringResource(R.string.alert_safe_now),
+        onClick = { confirmSafe = true },
+        colors = ButtonColors(Color.Transparent, Color.White, BorderStroke(2.dp, Color.White)),
+        height = 64.dp,
+        shape = RoundedCornerShape(18.dp),
+        textStyle = Eldering.type.buttonLarge,
+        modifier = Modifier.fillMaxWidth(),
+    )
     DesignButton(
         text = stringResource(R.string.alert_call_emergency),
         onClick = onCallEmergency,
@@ -233,13 +343,26 @@ private fun ColumnScope.SentContent(state: AccidentAlertUiState, onImOk: () -> U
         contentDescription = stringResource(R.string.alert_call_emergency_a11y),
         modifier = Modifier.fillMaxWidth(),
     )
-    DesignButton(
-        text = stringResource(R.string.alert_safe_now),
-        onClick = onImOk,
-        colors = ButtonColors(Color.Transparent, Color.White, BorderStroke(2.dp, Color.White)),
-        height = 56.dp,
-        textStyle = Eldering.type.buttonLarge,
-        modifier = Modifier.fillMaxWidth(),
+    if (confirmSafe) {
+        SafeNowConfirmation(
+            onConfirm = {
+                confirmSafe = false
+                onImOk()
+            },
+            onDismiss = { confirmSafe = false },
+        )
+    }
+}
+
+/** "I'm safe now" ends the alert for everyone, so it asks once (a stray tap must not call off the help). */
+@Composable
+fun SafeNowConfirmation(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.alert_safe_confirm_title)) },
+        text = { Text(stringResource(R.string.alert_safe_confirm_body)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.alert_safe_confirm_yes)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
     )
 }
 
@@ -401,12 +524,11 @@ private fun feedbackLabel(choice: FeedbackChoice): Int = when (choice) {
     FeedbackChoice.SOMETHING_ELSE -> R.string.feedback_something_else
 }
 
-/** Keeps the display on and uses light status/navigation bar icons on the dark alert background. */
+/** Light status/navigation bar icons on the dark alert background. */
 @Composable
-private fun KeepScreenOnWithLightSystemBars() {
+private fun LightSystemBars() {
     val view = LocalView.current
     DisposableEffect(view) {
-        view.keepScreenOn = true
         val window = (view.context as? Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         val previousStatus = controller?.isAppearanceLightStatusBars
@@ -414,12 +536,21 @@ private fun KeepScreenOnWithLightSystemBars() {
         controller?.isAppearanceLightStatusBars = false
         controller?.isAppearanceLightNavigationBars = false
         onDispose {
-            view.keepScreenOn = false
             if (controller != null && previousStatus != null && previousNav != null) {
                 controller.isAppearanceLightStatusBars = previousStatus
                 controller.isAppearanceLightNavigationBars = previousNav
             }
         }
+    }
+}
+
+/** Keeps the display on while [on]; the normal screen timeout applies otherwise. */
+@Composable
+private fun KeepScreenOn(on: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(view, on) {
+        view.keepScreenOn = on
+        onDispose { view.keepScreenOn = false }
     }
 }
 

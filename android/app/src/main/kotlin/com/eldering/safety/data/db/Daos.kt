@@ -69,6 +69,10 @@ interface DetectionEventDao {
             "OR triggered_at < :labeledCutoffMs",
     )
     suspend fun prune(unlabeledCutoffMs: Long, labeledCutoffMs: Long): Int
+
+    /** Sign-out / account switch: the log holds positions and raw sensor windows. */
+    @Query("DELETE FROM detection_events")
+    suspend fun clear(): Int
 }
 
 @Dao
@@ -93,6 +97,9 @@ interface EmergencyContactDao {
 
     @Query("DELETE FROM emergency_contacts WHERE id = :id")
     suspend fun delete(id: Long): Int
+
+    @Query("DELETE FROM emergency_contacts")
+    suspend fun clear(): Int
 
     @Query("UPDATE emergency_contacts SET position = :position WHERE id = :id")
     suspend fun setPosition(id: Long, position: Int)
@@ -133,6 +140,13 @@ interface OwnIncidentDao {
     @Query("DELETE FROM own_incidents WHERE updated_at < :cutoffMs AND status != 'QUEUED' AND status != 'ACTIVE'")
     suspend fun pruneClosed(cutoffMs: Long): Int
 
+    /** Incidents still open locally long after any live update or share link could matter (none pending upload). */
+    @Query(
+        "DELETE FROM own_incidents WHERE detected_at < :detectedBeforeMs " +
+            "AND incident_key NOT IN (SELECT incident_key FROM outbox WHERE state = 'PENDING')",
+    )
+    suspend fun pruneStale(detectedBeforeMs: Long): Int
+
     @Query("DELETE FROM own_incidents WHERE user_id = :userId")
     suspend fun deleteForUser(userId: String)
 }
@@ -164,10 +178,15 @@ interface OutboxDao {
     @Query("UPDATE outbox SET attempts = attempts + 1, next_attempt_at = :nextAttemptAtMs, last_error = :error WHERE id = :id")
     suspend fun recordFailure(id: Long, nextAttemptAtMs: Long, error: String)
 
-    @Query("UPDATE outbox SET state = 'FAILED', attempts = attempts + 1, last_error = :error WHERE id = :id")
+    /**
+     * A FAILED row is never sent again: its payload (for a create, the whole pre-event hour of trail) is dropped
+     * right away instead of being kept until [pruneFailed].
+     */
+    @Query("UPDATE outbox SET state = 'FAILED', attempts = attempts + 1, last_error = :error, payload_json = '{}' WHERE id = :id")
     suspend fun markFailed(id: Long, error: String)
 
-    @Query("UPDATE outbox SET state = 'FAILED', last_error = :error WHERE state = 'PENDING' AND incident_key = :key")
+    /** See [markFailed]: the payloads are dropped as well. */
+    @Query("UPDATE outbox SET state = 'FAILED', last_error = :error, payload_json = '{}' WHERE state = 'PENDING' AND incident_key = :key")
     suspend fun failAllForIncident(key: String, error: String)
 
     @Query("DELETE FROM outbox WHERE id IN (:ids)")

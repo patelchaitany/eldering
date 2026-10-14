@@ -6,8 +6,8 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.eldering.safety.service.ServiceNotifications
 
 /** One step of the permission walkthrough, in the order they are asked. */
 enum class PermissionStep {
@@ -109,8 +109,8 @@ class AndroidPermissionChecker(private val context: Context) : PermissionChecker
     override fun isGranted(permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
-    override fun notificationsEnabled(): Boolean = NotificationManagerCompat.from(context).areNotificationsEnabled() &&
-        (Build.VERSION.SDK_INT < 33 || isGranted(Manifest.permission.POST_NOTIFICATIONS))
+    /** Notifications allowed **and** the accident alarm channel not blocked (otherwise the countdown is invisible). */
+    override fun notificationsEnabled(): Boolean = ServiceNotifications.canAlarm(context)
 
     override fun ignoresBatteryOptimizations(): Boolean =
         context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) ?: false

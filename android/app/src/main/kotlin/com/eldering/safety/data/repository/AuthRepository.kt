@@ -30,6 +30,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  * @param onAccountDataDiscarded wipes per-account local data (pending uploads, own incidents) when a user signs
  *   out or a different account signs in on this device.
  * @param onSignedIn runs after a successful register/login (e.g. resume queued uploads of this account).
+ * @param onDeviceDataDiscarded wipes the personal data kept on the phone outside any account (location trail,
+ *   detection log with positions and sensor windows, emergency contacts, family caches): on sign-out, and before a
+ *   different account (or the first account after data recorded by nobody) starts using this phone.
+ * @param onSignedOut an explicit sign-out (not an expired session): stop protection; it starts again with the next
+ *   sign-in. Runs before the data is wiped, so nothing new is recorded afterwards.
  */
 class AuthRepository(
     private val api: ElderingApi,
@@ -38,6 +43,8 @@ class AuthRepository(
     private val time: TimeSource = TimeSource.System,
     private val onAccountDataDiscarded: suspend (userId: String) -> Unit = {},
     private val onSignedIn: suspend (Session) -> Unit = {},
+    private val onDeviceDataDiscarded: suspend () -> Unit = {},
+    private val onSignedOut: suspend () -> Unit = {},
 ) {
     /** Null while signed out. */
     val session: Flow<Session?> get() = sessionStore.session
@@ -68,7 +75,12 @@ class AuthRepository(
         val session = sessionStore.current() ?: return
         sessionStore.clear()
         meStore.clear()
-        onAccountDataDiscarded(session.userId)
+        withContext(NonCancellable) {
+            onSignedOut()
+            onAccountDataDiscarded(session.userId)
+            onDeviceDataDiscarded()
+            sessionStore.clearDataOwner()
+        }
         withContext(NonCancellable) {
             withTimeoutOrNull(LOGOUT_REVOKE_TIMEOUT_MS) {
                 apiCall { api.logout(RefreshTokenRequest(session.refreshToken)) }
@@ -79,8 +91,12 @@ class AuthRepository(
     private suspend fun startSession(response: AuthResponse): Session {
         val session = Session.from(response, time.nowMillis())
         val previous = sessionStore.current()
-        if (previous != null && previous.userId != session.userId) {
-            onAccountDataDiscarded(previous.userId)
+        // The owner survives an expired session (previous == null then): another account must not inherit the trail.
+        val owner = sessionStore.dataOwner() ?: previous?.userId
+        if (owner != session.userId) {
+            if (owner != null) onAccountDataDiscarded(owner)
+            if (previous != null && previous.userId != owner && previous.userId != session.userId) onAccountDataDiscarded(previous.userId)
+            onDeviceDataDiscarded()
         }
         meStore.clear()
         sessionStore.save(session)

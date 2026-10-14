@@ -1,5 +1,6 @@
 package com.eldering.safety.data.repository
 
+import com.eldering.safety.alert.EmergencyNumbers
 import com.eldering.safety.core.TimeSource
 import com.eldering.safety.data.db.EmergencyContact
 import com.eldering.safety.data.db.EmergencyContactDao
@@ -12,6 +13,17 @@ import kotlinx.coroutines.flow.Flow
 class ContactsRepository(
     private val dao: EmergencyContactDao,
     private val time: TimeSource = TimeSource.System,
+    /**
+     * Emergency services (112, 911, …) are never SMS contacts: every expired countdown, including a false alarm
+     * nobody cancelled, would text them automatically. The app only ever opens the dialer for them.
+     */
+    private val isEmergencyNumber: (String) -> Boolean = EmergencyNumbers::isStaticEmergencyNumber,
+    /**
+     * The number in international form (+country code), or null if that cannot be worked out. The accident SMS
+     * may be sent while roaming, so a number without a country code is not good enough (the form's hint asks for
+     * it). On the phone a national number is converted with the SIM's country (see `AppGraph`).
+     */
+    private val toInternational: (String) -> String? = PhoneNumbers::international,
 ) {
     sealed interface SaveResult {
         data class Saved(val contact: EmergencyContact) : SaveResult
@@ -19,22 +31,23 @@ class ContactsRepository(
         data class Invalid(val problem: Problem) : SaveResult
     }
 
-    enum class Problem { NAME_BLANK, NAME_TOO_LONG, PHONE_INVALID, DUPLICATE_PHONE, TOO_MANY, NOT_FOUND }
+    enum class Problem { NAME_BLANK, NAME_TOO_LONG, PHONE_INVALID, PHONE_NO_COUNTRY_CODE, EMERGENCY_NUMBER, DUPLICATE_PHONE, TOO_MANY, NOT_FOUND }
 
     /** Ordered by position. */
     val contacts: Flow<List<EmergencyContact>> = dao.observeAll()
 
     suspend fun all(): List<EmergencyContact> = dao.all()
 
-    /** Contacts that should get the accident SMS, in order. */
-    suspend fun smsRecipients(): List<EmergencyContact> = dao.all().filter { it.smsEnabled }
+    /** Contacts that should get the accident SMS, in order (never an emergency number saved by an older version). */
+    suspend fun smsRecipients(): List<EmergencyContact> = dao.all().filter { it.smsEnabled && !isEmergencyNumber(it.phone) }
 
     suspend fun add(name: String, phone: String, relation: String? = null, smsEnabled: Boolean = true): SaveResult {
         val existing = dao.all()
         if (existing.size >= MAX_CONTACTS) return SaveResult.Invalid(Problem.TOO_MANY)
+        val number = checkedPhone(phone)
         val candidate = EmergencyContact(
             name = name.trim(),
-            phone = PhoneNumbers.normalize(phone) ?: return SaveResult.Invalid(Problem.PHONE_INVALID),
+            phone = number.phone ?: return SaveResult.Invalid(number.problem!!),
             relation = relation?.trim()?.takeIf { it.isNotEmpty() },
             position = dao.maxPosition() + 1,
             smsEnabled = smsEnabled,
@@ -46,9 +59,11 @@ class ContactsRepository(
 
     suspend fun update(contact: EmergencyContact): SaveResult {
         val stored = dao.get(contact.id) ?: return SaveResult.Invalid(Problem.NOT_FOUND)
+        // A number saved before country codes were required stays as it is until someone edits it.
+        val number = if (PhoneNumbers.normalize(contact.phone) == stored.phone) CheckedPhone(stored.phone, null) else checkedPhone(contact.phone)
         val candidate = stored.copy(
             name = contact.name.trim(),
-            phone = PhoneNumbers.normalize(contact.phone) ?: return SaveResult.Invalid(Problem.PHONE_INVALID),
+            phone = number.phone ?: return SaveResult.Invalid(number.problem!!),
             relation = contact.relation?.trim()?.takeIf { it.isNotEmpty() },
             smsEnabled = contact.smsEnabled,
         )
@@ -59,12 +74,27 @@ class ContactsRepository(
 
     suspend fun remove(id: Long): Boolean = dao.delete(id) > 0
 
+    /** Sign-out / another account on this phone: the next user must not text this user's contacts. */
+    suspend fun clear(): Int = dao.clear()
+
     /** Persists a new order (e.g. after drag-and-drop); ids not listed keep their position. */
     suspend fun reorder(idsInOrder: List<Long>) = dao.reorder(idsInOrder)
+
+    private class CheckedPhone(val phone: String?, val problem: Problem?)
+
+    /** The international number, or the [Problem] with it. */
+    private fun checkedPhone(raw: String): CheckedPhone {
+        val normalized = PhoneNumbers.normalize(raw) ?: return CheckedPhone(null, Problem.PHONE_INVALID)
+        // Emergency services are refused as such later (clearer than "add the country code" for 112).
+        if (isEmergencyNumber(normalized)) return CheckedPhone(normalized, null)
+        val international = toInternational(normalized) ?: return CheckedPhone(null, Problem.PHONE_NO_COUNTRY_CODE)
+        return CheckedPhone(international, null)
+    }
 
     private fun validate(contact: EmergencyContact, others: List<EmergencyContact>): Problem? = when {
         contact.name.isEmpty() -> Problem.NAME_BLANK
         contact.name.length > MAX_NAME_LENGTH -> Problem.NAME_TOO_LONG
+        isEmergencyNumber(contact.phone) -> Problem.EMERGENCY_NUMBER
         others.any { it.phone == contact.phone } -> Problem.DUPLICATE_PHONE
         else -> null
     }
@@ -97,5 +127,15 @@ object PhoneNumbers {
         }
         val digits = normalized.count { it.isDigit() }
         return normalized.takeIf { digits in 3..17 }
+    }
+
+    /**
+     * [normalized] if it already is international ("+" and 8–15 digits, E.164), else null. Converting a national
+     * number needs the country (see `DevicePhoneNumbers`).
+     */
+    fun international(normalized: String): String? {
+        if (!normalized.startsWith("+")) return null
+        val digits = normalized.length - 1
+        return normalized.takeIf { digits in 8..15 && normalized.drop(1).all { it in '0'..'9' } }
     }
 }

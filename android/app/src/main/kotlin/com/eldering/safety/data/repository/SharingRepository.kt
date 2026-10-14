@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.map
 class SharingRepository(
     private val api: ElderingApi,
     private val meStore: MeStore,
+    /** Kept in step with every grants load and change (the accident countdown reads it offline). */
+    private val recipients: AlertRecipientsRepository? = null,
 ) {
     /** From the cached `/v1/me`; null until loaded. */
     val settings: Flow<SettingsDto?> = meStore.me.map { it?.settings }.distinctUntilChanged()
@@ -33,7 +35,10 @@ class SharingRepository(
     suspend fun updateSettings(patch: SettingsPatch): ApiResult<SettingsDto> {
         require(!patch.isEmpty) { "Empty settings patch" }
         return apiCall { api.updateSettings(patch.toJson()) }
-            .onSuccess { settings -> meStore.update { it.copy(settings = settings) } }
+            .onSuccess { settings ->
+                meStore.update { it.copy(settings = settings) }
+                recipients?.onSettingsChanged()
+            }
     }
 
     suspend fun turnSharingOn(): ApiResult<SettingsDto> = updateSettings(SettingsPatch(sharingState = SharingState.ON))
@@ -51,9 +56,9 @@ class SharingRepository(
         updateSettings(SettingsPatch(alwaysAlertOnAccident = enabled))
 
     /** My outgoing grants to every co-member (implicit defaults included, `is_default = true`). */
-    suspend fun grants(): ApiResult<List<GrantDto>> = apiCall { api.grants() }
+    suspend fun grants(): ApiResult<List<GrantDto>> = apiCall { api.grants() }.onSuccess { recipients?.onGrantsLoaded(it) }
 
     /** Sets what [viewerId] (a co-member) may see of me. */
     suspend fun setGrant(viewerId: String, level: GrantLevel): ApiResult<GrantDto> =
-        apiCall { api.setGrant(viewerId, SetGrantRequest(level)) }
+        apiCall { api.setGrant(viewerId, SetGrantRequest(level)) }.alsoUpdate(recipients)
 }

@@ -95,6 +95,23 @@ class TrailStoreTest {
     }
 
     @Test
+    fun `alerting keeps every move at 1 s but not the same spot every second`() = runTest {
+        // E2E: a rejected phone_drop candidate's 1 s fixes stored 11 identical points in 10 s.
+        val t = time.nowMillis()
+        assertTrue(store.record(fix(t, accuracy = 5f), TrailSamplingPolicy.ALERTING))
+        for (i in 1..9) {
+            assertFalse("identical fix after $i s", store.record(fix(t + i * 1_000L, accuracy = 5f), TrailSamplingPolicy.ALERTING))
+        }
+        assertFalse("2 m of GPS jitter", store.record(fix(t + 9_500, northM = 2.0, accuracy = 5f), TrailSamplingPolicy.ALERTING))
+        assertTrue("keep-alive after 10 s", store.record(fix(t + 10_000, accuracy = 5f), TrailSamplingPolicy.ALERTING))
+        assertTrue("a real move, 1 s later", store.record(fix(t + 11_000, northM = 6.0, accuracy = 5f), TrailSamplingPolicy.ALERTING))
+        assertTrue("a much better fix of the same spot", store.record(fix(t + 12_000, northM = 6.0, accuracy = 2f), TrailSamplingPolicy.ALERTING))
+        // A coarse fix needs to move further than its own uncertainty to count as a move.
+        assertFalse(store.record(fix(t + 13_000, northM = 30.0, accuracy = 80f), TrailSamplingPolicy.ALERTING))
+        assertEquals(4, store.count())
+    }
+
+    @Test
     fun `stale fixes outside retention are not stored`() = runTest {
         assertFalse(store.record(fix(time.nowMillis() - TrailStore.RETENTION_MS - 1), everything))
         assertNull(store.latest())

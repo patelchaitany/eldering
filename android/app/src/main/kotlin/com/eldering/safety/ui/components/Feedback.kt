@@ -19,6 +19,11 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -119,6 +124,20 @@ fun EmptyState(
     }
 }
 
+/**
+ * The text a field shows, owned by the field and updated synchronously on every keystroke.
+ *
+ * Callers keep the form in a ViewModel `StateFlow`, which reaches the composition a frame later. A text field whose
+ * `value` lags behind the IME resets the IME's state to the old text and the keystroke is applied again: the first
+ * typed character came out doubled ("TT", "ee2e…") in emulator tests. So the field shows its own copy; [value]
+ * coming back is recognised as the echo of what was reported, and only a change made by the caller (picker fill,
+ * reset, trimming to a maximum length) replaces the copy.
+ */
+private class LocalTextState(initial: String) {
+    var lastExternal: String = initial
+    val reported = ArrayDeque<String>()
+}
+
 /** Labelled text field in the design's colors; [error] is shown below and exposed to TalkBack. */
 @Composable
 fun FormField(
@@ -135,9 +154,28 @@ fun FormField(
     enabled: Boolean = true,
     trailingIcon: (@Composable () -> Unit)? = null,
 ) {
+    var text by remember { mutableStateOf(value) }
+    val sync = remember { LocalTextState(value) }
+    SideEffect {
+        if (value != sync.lastExternal) {
+            sync.lastExternal = value
+            val echo = sync.reported.indexOf(value)
+            if (echo >= 0) {
+                repeat(echo + 1) { sync.reported.removeFirst() }
+            } else {
+                text = value
+                sync.reported.clear()
+            }
+        }
+    }
     OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
+        value = text,
+        onValueChange = { new ->
+            text = new
+            sync.reported.addLast(new)
+            if (sync.reported.size > MAX_PENDING_ECHOES) sync.reported.removeFirst()
+            onValueChange(new)
+        },
         label = { Text(label) },
         isError = error != null,
         supportingText = (error ?: supporting)?.let { { Text(it) } },
@@ -163,3 +201,6 @@ fun FormField(
             .then(if (error != null) Modifier.semantics { error(error) } else Modifier),
     )
 }
+
+/** Edits the caller has not echoed back yet; more than this means it never echoes (transforms every value). */
+private const val MAX_PENDING_ECHOES = 32

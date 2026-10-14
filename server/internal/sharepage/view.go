@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"math"
 	"net/url"
 	"time"
 )
@@ -21,12 +22,14 @@ type pageView struct {
 	Active      bool
 	StatusLabel string
 	DetectedAt  time.Time
+	DetectedAgo string // "(12 min ago)" at render time: readable without JS in any time zone
 	ExpiresAt   time.Time
 
 	HasLatest      bool
 	LatestCoords   string
 	LatestAccuracy string
 	LatestAt       time.Time
+	LatestAgo      string
 	OSMURL         string
 	GeoURL         template.URL // geo: is not on html/template's URL allow-list; built from floats only
 
@@ -58,6 +61,9 @@ func newPageView(d *Data) *pageView {
 		DetectedAt: d.DetectedAt,
 		ExpiresAt:  d.ShareExpiresAt,
 	}
+	if v.Active {
+		v.DetectedAgo = agoLabel(d.DetectedAt, d.ServerTime)
+	}
 	if v.KindLabel == "" {
 		v.KindLabel = "Emergency alert"
 	}
@@ -78,6 +84,7 @@ func newPageView(d *Data) *pageView {
 			v.LatestAccuracy = fmt.Sprintf("±%.0f m", *p.AccuracyM)
 		}
 		v.LatestAt = p.RecordedAt
+		v.LatestAgo = agoLabel(p.RecordedAt, d.ServerTime)
 		v.OSMURL = osmURL(p.Lat, p.Lng)
 		v.GeoURL = template.URL(fmt.Sprintf("geo:%.6f,%.6f", p.Lat, p.Lng))
 	}
@@ -87,6 +94,24 @@ func newPageView(d *Data) *pageView {
 		}
 	}
 	return v
+}
+
+// agoLabel mirrors ago() in share.js, so the no-JS page (whose absolute times
+// are in UTC: the server cannot know the viewer's time zone) still says how
+// recent a time is. share.js localizes the times and keeps these labels fresh.
+func agoLabel(t, now time.Time) string {
+	if t.IsZero() || now.IsZero() {
+		return ""
+	}
+	s := int64(math.Round(max(0, now.Sub(t).Seconds())))
+	if s < 90 {
+		return fmt.Sprintf("(%d s ago)", s)
+	}
+	m := int64(math.Round(float64(s) / 60))
+	if m < 90 {
+		return fmt.Sprintf("(%d min ago)", m)
+	}
+	return fmt.Sprintf("(%d h ago)", int64(math.Round(float64(m)/60)))
 }
 
 func osmURL(lat, lng float64) string {

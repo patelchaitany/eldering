@@ -3,14 +3,18 @@ package com.eldering.safety.ui.trip
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.eldering.safety.core.TimeSource
+import com.eldering.safety.data.db.OwnIncident
 import com.eldering.safety.data.db.OwnIncidentStatus
 import com.eldering.safety.data.repository.IncidentRepository
 import com.eldering.safety.data.trail.TrailStore
+import com.eldering.safety.network.Activity
 import com.eldering.safety.network.ApiError
+import com.eldering.safety.network.ApiJson
 import com.eldering.safety.network.ApiResult
 import com.eldering.safety.network.IncidentDetailDto
 import com.eldering.safety.network.IncidentKind
 import com.eldering.safety.network.IncidentStatus
+import com.eldering.safety.ui.common.IncidentDetailsReader
 import com.eldering.safety.ui.common.UiText
 import com.eldering.safety.ui.common.toUiText
 import com.eldering.safety.ui.map.GeoPoint
@@ -21,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonPrimitive
 
 /** Why there is nothing to replay. */
 enum class TripEmpty {
@@ -88,7 +93,20 @@ class TripViewModel(
         val points = trailStore.recent().map {
             TrailSample(it.lat, it.lng, it.recordedAtMs, it.speedMps, it.accuracyM, it.activity)
         }
-        show(points, incidentAtMs = null, shareUrl = openShareUrl())
+        // My own accident/SOS in this hour gets the same "!" stop as the family's view of it.
+        val incident = ownIncidentWithin(points)
+        val kind = incident?.let { parseKind(it.kind) }
+        if (kind != null) state.update { it.copy(incidentKind = kind) }
+        show(points, incidentAtMs = incident?.detectedAtMs?.takeIf { kind != null }, shareUrl = openShareUrl())
+    }
+
+    /** The newest of my incidents detected while [points] were recorded (a minute of slack either side). */
+    private suspend fun ownIncidentWithin(points: List<TrailSample>): OwnIncident? {
+        val from = points.firstOrNull()?.tMs ?: return null
+        val to = points.last().tMs
+        return incidents.observeOwnIncidents().first()
+            .filter { it.detectedAtMs in (from - INCIDENT_SLACK_MS)..(to + INCIDENT_SLACK_MS) }
+            .maxByOrNull { it.detectedAtMs }
     }
 
     private suspend fun loadMember(userId: String) {
@@ -103,7 +121,13 @@ class TripViewModel(
         when (val detail = incidents.detail(id)) {
             is ApiResult.Success -> {
                 state.update { it.copy(personName = name ?: detail.value.displayName, incidentKind = detail.value.kind) }
-                show(samplesOf(detail.value), incidentAtMs = detail.value.detectedAt.toEpochMilli(), shareUrl = null)
+                // Server trails carry no activity; the detector's mode fills the subtitle ("… · Driving · 18 km").
+                show(
+                    samplesOf(detail.value),
+                    incidentAtMs = detail.value.detectedAt.toEpochMilli(),
+                    shareUrl = null,
+                    fallbackActivity = IncidentDetailsReader.mode(detail.value.details)?.takeIf { it != Activity.UNKNOWN },
+                )
             }
             is ApiResult.Failure -> fail(detail.error)
         }
@@ -111,12 +135,13 @@ class TripViewModel(
 
     private fun fail(error: ApiError) = state.update { it.copy(loading = false, error = error.toUiText()) }
 
-    private fun show(points: List<TrailSample>, incidentAtMs: Long?, shareUrl: String?) {
+    private fun show(points: List<TrailSample>, incidentAtMs: Long?, shareUrl: String?, fallbackActivity: Activity? = null) {
         if (points.isEmpty()) {
             state.update { it.copy(loading = false, empty = if (userId == null) TripEmpty.NO_LOCAL_TRAIL else TripEmpty.NOT_SHARED) }
             return
         }
         val summary = TrailSummarizer.summarize(points, incidentAtMs)
+            ?.let { if (it.dominantActivity == null && fallbackActivity != null) it.copy(dominantActivity = fallbackActivity) else it }
         val cursor = summary?.incidentIndex ?: points.lastIndex
         state.update {
             it.copy(loading = false, points = points, summary = summary, cursor = cursor, empty = null, shareUrl = shareUrl)
@@ -145,6 +170,15 @@ class TripViewModel(
     }
 
     companion object {
+        private const val INCIDENT_SLACK_MS = 60_000L
+
+        /** [OwnIncident.kind] is the wire name ("fall", "vehicle_crash", …). */
+        fun parseKind(wire: String): IncidentKind? = try {
+            ApiJson.decodeFromJsonElement(IncidentKind.serializer(), JsonPrimitive(wire))
+        } catch (e: IllegalArgumentException) { // SerializationException extends it
+            null
+        }
+
         /** Server trail (oldest first) plus the latest live point if it is newer than the trail. */
         fun samplesOf(detail: IncidentDetailDto): List<TrailSample> {
             val trail = detail.trail.map { TrailSample(it.lat, it.lng, it.recordedAt.toEpochMilli(), accuracyM = it.accuracyM, landmark = it.landmark) }

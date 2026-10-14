@@ -5,6 +5,7 @@ import com.eldering.detection.EventKind
 import com.eldering.detection.Mode
 import com.eldering.safety.data.db.DetectionOutcome
 import com.eldering.safety.data.db.FeedbackLabel
+import com.eldering.safety.data.repository.AlertRecipient
 import com.eldering.safety.data.repository.IncidentRepository
 import com.eldering.safety.data.trail.TrailPoint
 import com.eldering.safety.network.IncidentKind
@@ -17,6 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -38,6 +40,9 @@ class AlertControllerTest {
     private val dispatcher = FakeDispatcher()
     private val frozenTrail = listOf(TrailPoint(FakeTime.T0 - 60_000, 48.1, 11.5, 8f))
     private var contacts = 2
+    private var family = emptyList<AlertRecipient>()
+
+    private val store = MemoryStore()
 
     private fun TestScope.controller() = AlertController(
         scope = backgroundScope,
@@ -49,6 +54,8 @@ class AlertControllerTest {
         wake = wake,
         time = time,
         wallFromElapsedNanos = { nanos -> FakeTime.T0 - (SENSOR_NOW - nanos) / 1_000_000 },
+        store = store,
+        familyRecipients = { family },
     )
 
     private fun event(kind: EventKind = EventKind.FALL, atNanos: Long = SENSOR_NOW - 10_000_000_000L) =
@@ -101,11 +108,11 @@ class AlertControllerTest {
         val sent = c.state.value as AlertState.Sent
         assertEquals(1, dispatcher.dispatched.size)
         assertEquals(frozenTrail, dispatcher.dispatched.single().second)
-        assertEquals("incident-1", sent.result.incidentKey)
+        assertEquals(sent.alert.incidentKey, sent.result.incidentKey)
         assertTrue("alarm stops once sent", "alarm-off" in ui.calls)
         assertTrue("sent" in ui.calls)
         assertEquals(DetectionOutcome.REPORTED, journal.outcomes.single().second)
-        assertEquals("incident-1", journal.outcomes.single().third)
+        assertEquals(sent.alert.incidentKey, journal.outcomes.single().third)
         assertEquals(wake.acquired, wake.released)
         assertEquals(AlertPhase.SENT, AlertPresentation.phase(sent, sent.alert.id))
         assertEquals(DeliveryState.DELIVERED, AlertPresentation.deliveries(sent).first().state)
@@ -160,12 +167,15 @@ class AlertControllerTest {
         runCurrent()
         c.sendNow()
         runCurrent()
+        val key = c.state.value.alert!!.incidentKey
         c.imOk()
         c.imOk()
         runCurrent()
 
         assertEquals(Ending.RESOLVED, (c.state.value as AlertState.Finished).ending)
-        assertEquals(listOf("incident-1" to Resolution.USER_OK), dispatcher.resolved)
+        assertEquals(listOf(key to Resolution.USER_OK), dispatcher.resolved)
+        assertEquals("the texted contacts hear that the person is OK", 1, dispatcher.safeNotices.size)
+        assertNull("nothing left to resume", store.value)
     }
 
     @Test
@@ -182,10 +192,15 @@ class AlertControllerTest {
         assertEquals(AlertPhase.CANCELLED, AlertPresentation.phase(c.state.value, c.state.value.alert!!.id))
         assertTrue(dispatcher.resolved.isEmpty())
 
+        assertFalse("no SMS after I'm OK", dispatcher.hooks!!.stillWanted())
         dispatcher.gate!!.complete(Unit)
         runCurrent()
-        assertEquals(Ending.RESOLVED, (c.state.value as AlertState.Finished).ending)
-        assertEquals(listOf("incident-1" to Resolution.USER_OK), dispatcher.resolved)
+        val finished = c.state.value as AlertState.Finished
+        assertEquals(Ending.RESOLVED, finished.ending)
+        assertEquals(SmsOutcome.CANCELLED, finished.result!!.sms)
+        assertEquals(false, dispatcher.smsSentWhileWanted)
+        assertEquals(listOf(finished.alert.incidentKey to Resolution.USER_OK), dispatcher.resolved)
+        assertTrue("nobody was texted, so no follow-up", dispatcher.safeNotices.isEmpty())
     }
 
     @Test
@@ -254,7 +269,7 @@ class AlertControllerTest {
         runCurrent()
         c.sendNow()
         runCurrent()
-        dispatcher.onLiveEnded!!("incident-1")
+        dispatcher.onLiveEnded!!(c.state.value.alert!!.incidentKey)
         assertEquals(Ending.ENDED, (c.state.value as AlertState.Finished).ending)
         assertTrue("dismiss" in ui.calls)
         c.imOk() // nothing left to resolve
@@ -307,6 +322,236 @@ class AlertControllerTest {
         assertNull(sent.result.incidentKey)
         assertEquals(DeliveryState.FAILED, AlertPresentation.deliveries(sent).first().state)
         assertEquals(wake.acquired, wake.released)
+        assertFalse("nothing runs for it: not active", sent.isActive)
+    }
+
+    // ------------------------------------------------------------------ review fixes
+
+    @Test
+    fun `closing the SOS screen does not cancel the SOS`() = runTest {
+        dispatcher.gate = CompletableDeferred()
+        val c = controller()
+        // The SOS screen's viewModelScope: cleared (Back) while the send is still waiting on landmarks/share URL.
+        val screen = launch { c.triggerSos() }
+        runCurrent()
+        assertEquals(1, dispatcher.dispatched.size)
+        screen.cancel()
+        runCurrent()
+
+        dispatcher.gate!!.complete(Unit)
+        runCurrent()
+        val sent = c.state.value as AlertState.Sent
+        assertEquals(SmsOutcome.DRY_RUN, sent.result.sms)
+        assertTrue(sent.result.report is IncidentRepository.ReportResult.Sent)
+        assertTrue(sent.isActive)
+    }
+
+    @Test
+    fun `a signed-out alert does not suppress the next detection or SOS`() = runTest {
+        dispatcher.report = { IncidentRepository.ReportResult.NotSignedIn }
+        val c = controller()
+        c.onDetection(event(), Mode.WALKING)
+        runCurrent()
+        c.sendNow()
+        runCurrent()
+        val sent = c.state.value as AlertState.Sent
+        assertFalse("no live session: nothing keeps it active", sent.isActive)
+        assertNull("nothing to resume after a restart", store.value)
+
+        // 20 minutes later, a real accident: a fresh countdown, not SUPPRESSED.
+        advanceTimeBy(20 * 60_000L)
+        c.onDetection(event(EventKind.PEDESTRIAN_IMPACT), Mode.WALKING)
+        runCurrent()
+        assertTrue(c.state.value is AlertState.Counting)
+        assertTrue(journal.outcomes.none { it.second == DetectionOutcome.SUPPRESSED })
+        c.imOk()
+        runCurrent()
+
+        // And an SOS sends a new alert instead of returning the old result.
+        val outcome = async { c.triggerSos() }
+        runCurrent()
+        outcome.await()
+        assertEquals(IncidentKind.SOS, dispatcher.dispatched.last().first.kind)
+        assertEquals(2, dispatcher.dispatched.size)
+    }
+
+    @Test
+    fun `I'm safe now after a signed-out alert still tells the texted contacts`() = runTest {
+        dispatcher.report = { IncidentRepository.ReportResult.NotSignedIn }
+        val c = controller()
+        c.onDetection(event(), Mode.WALKING)
+        runCurrent()
+        c.sendNow()
+        runCurrent()
+        c.imOk()
+        runCurrent()
+        assertEquals(Ending.RESOLVED, (c.state.value as AlertState.Finished).ending)
+        assertTrue("nothing on a server to resolve", dispatcher.resolved.isEmpty())
+        assertEquals(1, dispatcher.safeNotices.size)
+    }
+
+    @Test
+    fun `the running countdown is persisted and cleared when cancelled`() = runTest {
+        val c = controller()
+        c.onDetection(event(), Mode.WALKING, windowJson = "{}")
+        runCurrent()
+        val saved = store.value!!
+        val alert = c.state.value.alert!!
+        assertEquals(PersistedAlert.Phase.COUNTING, saved.phase)
+        assertEquals(alert.incidentKey, saved.key)
+        assertEquals(alert.countdownEndsAtMs, saved.countdownEndsAtMs)
+        assertEquals(1L, saved.eventId)
+        assertEquals(EventKind.FALL.name, saved.event!!.kind)
+        c.imOk()
+        assertNull(store.value)
+    }
+
+    @Test
+    fun `the countdown names the family members who get the app alert, through a restart and into the sent lines`() = runTest {
+        // E2E: "· To 1 emergency contact (SMS)" although Test Viewer was alerted through the app.
+        family = listOf(AlertRecipient("u-mom", "Mom"), AlertRecipient("u-dad", "Dad"))
+        val first = controller()
+        first.onDetection(event(), Mode.WALKING)
+        runCurrent()
+        val counting = first.state.value as AlertState.Counting
+        val info = AlertPresentation.info(counting.alert, counting)
+        assertEquals(listOf("Mom", "Dad"), info.familyRecipients)
+        assertEquals(2, info.emergencyContactCount)
+        assertEquals(family, store.value!!.family)
+
+        // A new process (no network yet) still knows who was named.
+        family = emptyList()
+        val c = controller()
+        c.restore()
+        runCurrent()
+        c.sendNow()
+        runCurrent()
+        val sent = c.state.value as AlertState.Sent
+        assertEquals(listOf("Mom", "Dad"), sent.alert.familyRecipients.map { it.name })
+        assertEquals(listOf("Mom", "Dad"), dispatcher.dispatched.single().first.familyRecipients.map { it.name })
+
+        // "Delivered" turns into who has actually seen it once family acknowledges.
+        val before = AlertPresentation.deliveries(sent)
+        assertEquals(DeliveryState.DELIVERED, before.first().state)
+        val acks = listOf(com.eldering.safety.network.AckDto("i", "u-dad", "Dad", com.eldering.safety.network.AckState.ON_MY_WAY, java.time.Instant.EPOCH))
+        val after = AlertPresentation.deliveries(sent, acks)
+        assertEquals(listOf(DeliveryState.DELIVERED, DeliveryState.ON_THE_WAY, DeliveryState.DRY_RUN), after.map { it.state })
+    }
+
+    @Test
+    fun `an SOS names the family members too`() = runTest {
+        family = listOf(AlertRecipient("u-mom", "Mom"))
+        val c = controller()
+        val sos = async { c.triggerSos() }
+        runCurrent()
+        sos.await()
+        assertEquals(listOf("Mom"), dispatcher.dispatched.single().first.familyRecipients.map { it.name })
+    }
+
+    @Test
+    fun `after process death a running countdown comes back with the time left`() = runTest {
+        val first = controller()
+        first.onDetection(event(), Mode.WALKING)
+        runCurrent()
+        val key = first.state.value.alert!!.incidentKey
+
+        // New process 6 s later: same store, fresh controller.
+        time.advance(6_000)
+        ui.calls.clear()
+        val c = controller()
+        c.restore()
+        val counting = c.state.value as AlertState.Counting
+        assertEquals(key, counting.alert.incidentKey)
+        assertEquals(FakeTime.T0 + 15_000, counting.alert.countdownEndsAtMs)
+        assertEquals(listOf("countdown", "alarm-on"), ui.calls)
+
+        // A notification "I'm OK" arriving right after the restart acts on it.
+        c.imOk()
+        assertEquals(Ending.CANCELLED, (c.state.value as AlertState.Finished).ending)
+        runCurrent()
+        assertTrue(dispatcher.dispatched.isEmpty())
+    }
+
+    @Test
+    fun `a countdown that expired while the process was dead is sent at once with the same key`() = runTest {
+        val first = controller()
+        first.onDetection(event(), Mode.WALKING)
+        runCurrent()
+        val key = first.state.value.alert!!.incidentKey
+
+        time.advance(60_000) // expired 45 s ago
+        val c = controller()
+        c.restore()
+        runCurrent()
+        val sent = c.state.value as AlertState.Sent
+        assertEquals(key, dispatcher.dispatched.single().first.incidentKey)
+        assertEquals(key, sent.result.incidentKey)
+        assertEquals(PersistedAlert.Phase.SENT, store.value!!.phase)
+    }
+
+    @Test
+    fun `an interrupted send whose SMS already went out does not text again`() = runTest {
+        store.value = PersistedAlert(
+            key = "k-1", phase = PersistedAlert.Phase.SENDING, kind = IncidentKind.FALL, detectedAtMs = FakeTime.T0 - 30_000,
+            countdownMs = 15_000, countdownEndsAtMs = FakeTime.T0 - 15_000, contacts = 2, sms = SmsOutcome.SENT.name,
+        )
+        val c = controller()
+        c.restore()
+        runCurrent()
+        assertEquals(SmsOutcome.SENT, dispatcher.hooks!!.smsDone)
+        assertEquals(SmsOutcome.SENT, (c.state.value as AlertState.Sent).result.sms)
+    }
+
+    @Test
+    fun `a sent alert resumes its live updates and its I'm safe now`() = runTest {
+        store.value = PersistedAlert(
+            key = "k-2", phase = PersistedAlert.Phase.SENT, kind = IncidentKind.FALL, detectedAtMs = FakeTime.T0 - 10 * 60_000,
+            countdownMs = 15_000, sms = SmsOutcome.SENT.name, sentAtMs = FakeTime.T0 - 9 * 60_000,
+        )
+        dispatcher.resumeResult = IncidentRepository.ReportResult.Queued("k-2", null)
+        val c = controller()
+        c.restore()
+        assertTrue("active right away (notification actions)", c.state.value.isActive)
+        runCurrent()
+        assertEquals(FakeTime.T0 - 9 * 60_000 + AlertController.LIVE_DURATION_MS, dispatcher.resumed.single().second)
+        assertTrue("sent" in ui.calls)
+
+        c.imOk()
+        runCurrent()
+        assertEquals(listOf("k-2" to Resolution.USER_OK), dispatcher.resolved)
+        assertEquals(1, dispatcher.safeNotices.size)
+        assertNull(store.value)
+    }
+
+    @Test
+    fun `a sent alert whose incident is already closed is not resumed`() = runTest {
+        store.value = PersistedAlert(
+            key = "k-3", phase = PersistedAlert.Phase.SENT, kind = IncidentKind.SOS, detectedAtMs = FakeTime.T0 - 60_000,
+            countdownMs = 0, sms = SmsOutcome.NO_CONTACTS.name, sentAtMs = FakeTime.T0 - 60_000,
+        )
+        dispatcher.resumeResult = null
+        val c = controller()
+        c.restore()
+        runCurrent()
+        assertEquals(Ending.ENDED, (c.state.value as AlertState.Finished).ending)
+        assertNull(store.value)
+    }
+
+    @Test
+    fun `nothing to resume clears a notification left behind, old alerts are dropped`() = runTest {
+        controller().restore()
+        assertEquals(listOf("clear-stale"), ui.calls)
+
+        ui.calls.clear()
+        store.value = PersistedAlert(
+            key = "old", phase = PersistedAlert.Phase.COUNTING, kind = IncidentKind.FALL,
+            detectedAtMs = FakeTime.T0 - AlertController.RESUME_MAX_AGE_MS - 1, countdownMs = 15_000,
+        )
+        val c = controller()
+        c.restore()
+        assertEquals(AlertState.Idle, c.state.value)
+        assertNull(store.value)
+        assertEquals(listOf("clear-stale"), ui.calls)
     }
 
     // ------------------------------------------------------------------ fakes
@@ -319,6 +564,7 @@ class AlertControllerTest {
         override fun startAlarm() { calls += "alarm-on" }
         override fun stopAlarm() { calls += "alarm-off" }
         override fun dialEmergency() { calls += "dial" }
+        override fun clearStale() { calls += "clear-stale" }
     }
 
     private class FakeJournal : DetectionJournal {
@@ -348,25 +594,56 @@ class AlertControllerTest {
     private class FakeDispatcher : AlertDispatcher {
         val dispatched = CopyOnWriteArrayList<Pair<ActiveAlert, List<TrailPoint>>>()
         val resolved = CopyOnWriteArrayList<Pair<String, Resolution>>()
+        val safeNotices = CopyOnWriteArrayList<Pair<ActiveAlert, Boolean>>()
+        val resumed = CopyOnWriteArrayList<Pair<ActiveAlert, Long>>()
         var gate: CompletableDeferred<Unit>? = null
         var fail = false
+        var report: (String) -> IncidentRepository.ReportResult = { key ->
+            IncidentRepository.ReportResult.Sent(key, "server-$key", "https://share.example/s/x", FakeTime.T0 + 72 * 3_600_000L)
+        }
+        var sms = SmsOutcome.DRY_RUN
         var onLiveEnded: ((String) -> Unit)? = null
+        var hooks: DispatchHooks? = null
+        var smsSentWhileWanted: Boolean? = null
+        var resumeResult: IncidentRepository.ReportResult? = null
 
-        override suspend fun dispatch(alert: ActiveAlert, frozenTrail: List<TrailPoint>, onLiveEnded: (String) -> Unit): DispatchResult {
+        override suspend fun dispatch(alert: ActiveAlert, frozenTrail: List<TrailPoint>, hooks: DispatchHooks): DispatchResult {
             dispatched += alert to frozenTrail
-            this.onLiveEnded = onLiveEnded
+            this.hooks = hooks
+            this.onLiveEnded = hooks.onLiveEnded
             gate?.await()
             if (fail) error("boom")
-            val key = "incident-${dispatched.size}"
-            return DispatchResult(
-                IncidentRepository.ReportResult.Sent(key, "server-$key", "https://share.example/s/x", FakeTime.T0 + 72 * 3_600_000L),
-                SmsOutcome.DRY_RUN,
-                smsRecipients = 2,
-            )
+            // Like IncidentSender: the SMS step asks whether the alert is still wanted right before texting.
+            val outcome = hooks.smsDone ?: if (hooks.stillWanted()) sms else SmsOutcome.CANCELLED
+            smsSentWhileWanted = hooks.stillWanted()
+            hooks.onSmsDone(outcome)
+            return DispatchResult(report(alert.incidentKey), outcome, smsRecipients = 2)
         }
 
         override suspend fun resolve(incidentKey: String, resolution: Resolution) {
             resolved += incidentKey to resolution
+        }
+
+        override suspend fun resumeLive(alert: ActiveAlert, liveEndsAtMs: Long, onLiveEnded: (String) -> Unit): IncidentRepository.ReportResult? {
+            resumed += alert to liveEndsAtMs
+            this.onLiveEnded = onLiveEnded
+            return resumeResult
+        }
+
+        override suspend fun notifySafe(alert: ActiveAlert, smsWentOut: Boolean) {
+            safeNotices += alert to smsWentOut
+        }
+    }
+
+    private class MemoryStore : AlertStore {
+        var value: PersistedAlert? = null
+        override fun load(): PersistedAlert? = value
+        override fun save(alert: PersistedAlert) {
+            // Round-trip through the real encoding, as on the phone.
+            value = PersistedAlert.decode(PersistedAlert.encode(alert))
+        }
+        override fun clear() {
+            value = null
         }
     }
 

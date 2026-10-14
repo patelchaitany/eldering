@@ -20,7 +20,7 @@
 <section class="status {{if .Active}}status-active{{else}}status-resolved{{end}}" id="status-card" data-active="{{.Active}}">
   <h1 id="kind">{{.KindLabel}}</h1>
   <p id="status-label">{{.StatusLabel}}</p>
-  <p class="meta">Detected <time class="ts" datetime="{{iso .DetectedAt}}">{{human .DetectedAt}}</time></p>
+  <p class="meta">Detected <time class="ts" datetime="{{iso .DetectedAt}}">{{human .DetectedAt}}</time>{{if .Active}} <span class="muted" id="detected-ago">{{.DetectedAgo}}</span>{{end}}</p>
 </section>
 {{- if .Active}}
 <div id="map" class="map" role="region" aria-label="Map of the latest location and the trail before the alert"></div>
@@ -29,7 +29,7 @@
   <h2>Latest location</h2>
   {{- if .HasLatest}}
   <p class="coords"><span id="latest-coords">{{.LatestCoords}}</span> <span class="muted" id="latest-acc">{{.LatestAccuracy}}</span></p>
-  <p class="meta">Updated <time class="ts" id="latest-at" datetime="{{iso .LatestAt}}">{{human .LatestAt}}</time> <span class="muted" id="latest-ago"></span></p>
+  <p class="meta">Updated <time class="ts" id="latest-at" datetime="{{iso .LatestAt}}">{{human .LatestAt}}</time> <span class="muted" id="latest-ago">{{.LatestAgo}}</span></p>
   <p class="links"><a id="osm-link" href="{{.OSMURL}}" rel="noopener noreferrer" target="_blank">Open in OpenStreetMap</a><a id="geo-link" href="{{.GeoURL}}">Open in maps app</a></p>
   {{- else}}
   <p id="latest-coords">No location was available yet. This page refreshes automatically.</p>

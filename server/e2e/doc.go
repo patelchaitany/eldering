@@ -30,5 +30,7 @@
 //
 //	E2E_BASE_URL=https://safety.example.com go test -count=1 -v -timeout 30m ./e2e
 //
-// Remove the throwaway accounts afterwards with cleanup.sql (`make e2e-clean`).
+// Remove the throwaway accounts afterwards with cleanup.sql (`make e2e-clean`); it
+// deletes every e2e-*@example.test account, including the Android contract test's
+// e2e-android-* accounts.
 package e2e

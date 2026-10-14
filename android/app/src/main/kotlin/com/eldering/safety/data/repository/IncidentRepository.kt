@@ -85,42 +85,55 @@ class IncidentRepository(
 
     // --- My incidents -----------------------------------------------------------------------------------------
 
-    suspend fun report(draft: IncidentDraft): ReportResult {
+    /**
+     * Stores [draft] as my incident (outbox row + local copy) and tries to upload it right away.
+     *
+     * [incidentKey] identifies the alert across process restarts: reporting the same key again (an interrupted send
+     * resumed after a restart) never creates a second incident, it just drives the stored one forward.
+     *
+     * Background delivery is scheduled **before** the inline attempt, so a process death during it (OEM killer, low
+     * memory, shutdown) cannot orphan the stored row; the per-incident lock serializes the two and creates are
+     * idempotent on the server.
+     */
+    suspend fun report(draft: IncidentDraft, incidentKey: String? = null): ReportResult {
         val session = sessionStore.current() ?: return ReportResult.NotSignedIn
-        val key = newIncidentKey()
+        val key = incidentKey ?: newIncidentKey()
         val now = time.nowMillis()
-        val request = CreateIncidentRequest(
-            kind = draft.kind,
-            detectedAt = Instant.ofEpochMilli(draft.detectedAtMs),
-            lat = draft.lat,
-            lng = draft.lng,
-            details = draft.details,
-            trail = draft.normalizedTrail(),
-        )
-        database.withTransaction {
-            ownDao.insert(
-                OwnIncident(
-                    incidentKey = key,
-                    userId = session.userId,
-                    kind = draft.kind.wireName(),
-                    detectedAtMs = draft.detectedAtMs,
-                    lat = draft.lat,
-                    lng = draft.lng,
-                    createdAtMs = now,
-                    updatedAtMs = now,
-                ),
+        if (ownDao.get(key) == null) {
+            val request = CreateIncidentRequest(
+                kind = draft.kind,
+                detectedAt = Instant.ofEpochMilli(draft.detectedAtMs),
+                lat = draft.lat,
+                lng = draft.lng,
+                details = draft.details,
+                trail = draft.normalizedTrail(),
             )
-            outboxDao.insert(
-                OutboxItem(
-                    type = OutboxType.CREATE_INCIDENT,
-                    incidentKey = key,
-                    userId = session.userId,
-                    payloadJson = json.encodeToString(CreateIncidentRequest.serializer(), request),
-                    createdAtMs = now,
-                    nextAttemptAtMs = now,
-                ),
-            )
+            database.withTransaction {
+                ownDao.insert(
+                    OwnIncident(
+                        incidentKey = key,
+                        userId = session.userId,
+                        kind = draft.kind.wireName(),
+                        detectedAtMs = draft.detectedAtMs,
+                        lat = draft.lat,
+                        lng = draft.lng,
+                        createdAtMs = now,
+                        updatedAtMs = now,
+                    ),
+                )
+                outboxDao.insert(
+                    OutboxItem(
+                        type = OutboxType.CREATE_INCIDENT,
+                        incidentKey = key,
+                        userId = session.userId,
+                        payloadJson = json.encodeToString(CreateIncidentRequest.serializer(), request),
+                        createdAtMs = now,
+                        nextAttemptAtMs = now,
+                    ),
+                )
+            }
         }
+        scheduler.schedule()
         val drain = outbox.drain(ignoreBackoff = true, onlyIncident = key)
         val incident = ownDao.get(key)
         val serverId = incident?.serverId
@@ -130,7 +143,6 @@ class IncidentRepository(
             return ReportResult.Sent(key, serverId, shareUrl, shareExpiresAtMs)
         }
         if (incident?.status == OwnIncidentStatus.FAILED) return ReportResult.Rejected(key, drain.lastError)
-        scheduler.schedule()
         return ReportResult.Queued(key, drain.lastError)
     }
 
@@ -185,6 +197,8 @@ class IncidentRepository(
                 // Optimistic: locally it is over; the queued request makes it so on the server.
                 ownDao.setStatus(incidentKey, OwnIncidentStatus.RESOLVED, resolution.wireName(), now)
             }
+            // Before the inline attempt (see report): family must see the emergency end even if we die now.
+            scheduler.schedule()
             deliverSoon(incidentKey)
         }
         return ownDao.get(incidentKey)
@@ -202,6 +216,17 @@ class IncidentRepository(
 
     /** Pending uploads across incidents (for a "not delivered yet" indicator). */
     fun observePendingUploads(): Flow<Int> = outboxDao.observePendingCount()
+
+    /**
+     * Makes sure WorkManager will deliver whatever is still queued for the signed-in account (service start, boot,
+     * the service's housekeeping tick). Returns true if anything was pending.
+     */
+    suspend fun scheduleIfPending(): Boolean {
+        val session = sessionStore.current() ?: return false
+        if (outboxDao.pendingCount(session.userId) == 0) return false
+        scheduler.schedule()
+        return true
+    }
 
     /** Retries everything now (e.g. when connectivity returns while the app is open). */
     suspend fun retryPending(): OutboxProcessor.DrainResult {
@@ -227,10 +252,17 @@ class IncidentRepository(
 
     // --- Housekeeping -----------------------------------------------------------------------------------------
 
-    /** Drops closed incidents and dead outbox rows older than a week. */
+    /**
+     * Retention (run about hourly): closed incidents and dead outbox rows go a week after they ended; incidents
+     * that never got closed locally (live updates over, nobody resolved them) a week after their share link
+     * expired, together with their share URL.
+     */
     suspend fun prune(): Int {
-        val cutoff = time.nowMillis() - CLOSED_RETENTION_MS
-        return ownDao.pruneClosed(cutoff) + outboxDao.pruneFailed(cutoff)
+        val now = time.nowMillis()
+        val cutoff = now - CLOSED_RETENTION_MS
+        return ownDao.pruneClosed(cutoff) +
+            ownDao.pruneStale(detectedBeforeMs = now - OutboxProcessor.MAX_ITEM_AGE_MS - CLOSED_RETENTION_MS) +
+            outboxDao.pruneFailed(cutoff)
     }
 
     /** Deletes this account's queued uploads and incident history from the phone (sign-out / account switch). */

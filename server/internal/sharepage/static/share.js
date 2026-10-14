@@ -180,6 +180,8 @@ function renderLatest(d) {
 }
 
 function update(d) {
+  const detectedAgo = byId('detected-ago');
+  if (detectedAgo) detectedAgo.textContent = ago(d.detected_at);
   renderLatest(d);
   renderLandmarks(d);
   if (!map || !mapReady || !d.latest) return;

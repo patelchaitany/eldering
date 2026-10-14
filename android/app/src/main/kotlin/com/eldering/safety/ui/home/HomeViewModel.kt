@@ -3,9 +3,11 @@ package com.eldering.safety.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.eldering.safety.core.TimeSource
+import com.eldering.safety.data.db.EmergencyContact
 import com.eldering.safety.data.db.OwnIncidentStatus
 import com.eldering.safety.data.repository.AuthRepository
 import com.eldering.safety.data.repository.ContactsRepository
+import com.eldering.safety.data.repository.FamilyPhoneBook
 import com.eldering.safety.data.repository.FamilyRepository
 import com.eldering.safety.data.repository.IncidentRepository
 import com.eldering.safety.data.repository.LocationRepository
@@ -16,6 +18,7 @@ import com.eldering.safety.network.IncidentStatus
 import com.eldering.safety.network.IncidentSummaryDto
 import com.eldering.safety.network.MemberLocationDto
 import com.eldering.safety.network.Resolution
+import com.eldering.safety.ui.common.Formats
 import com.eldering.safety.ui.common.toUiText
 import com.eldering.safety.ui.map.CameraRequest
 import com.eldering.safety.ui.map.CameraTarget
@@ -53,6 +56,11 @@ class HomeViewModel(
     private val time: TimeSource = TimeSource.System,
     private val pollIntervalMs: Long = POLL_INTERVAL_MS,
     private val fullRefreshEvery: Int = FULL_REFRESH_EVERY,
+    /** "I'm safe now" on my open incident (through the alert pipeline when it still runs it). */
+    private val resolveOwn: suspend (incidentKey: String) -> Unit = { key -> incidents.resolveOwn(key, Resolution.USER_OK) },
+    private val phoneBook: FamilyPhoneBook? = null,
+    /** Keeps the countdown's "To Mom, Dad (app)" list fresh while the app is open. */
+    private val refreshRecipients: suspend () -> Unit = {},
 ) : ViewModel() {
 
     private val state = MutableStateFlow(HomeUiState(nowMs = time.nowMillis()))
@@ -62,12 +70,13 @@ class HomeViewModel(
     private var lastIncidents: List<IncidentSummaryDto> = emptyList()
     private var theirGrants: Map<String, GrantLevel> = emptyMap()
     private var myFix: MyFix? = null
-    private var phones: Map<String, String> = emptyMap()
+    private var contactList: List<EmergencyContact> = emptyList()
     private val places = mutableMapOf<String, String>()
     private val placeCells = mutableMapOf<String, String>()
     private var round = 0
     private var cameraSeq = 0
-    private var fittedOnce = false
+    /** Who was on the map when the camera last fitted everyone (me = [HomeUiState.ME]). */
+    private var fittedIds: Set<String>? = null
 
     init {
         viewModelScope.launch {
@@ -78,7 +87,7 @@ class HomeViewModel(
         }
         viewModelScope.launch {
             contacts.contacts.collect { list ->
-                phones = list.associate { it.name.trim().lowercase() to it.phone }
+                contactList = list
                 rebuild()
             }
         }
@@ -127,7 +136,10 @@ class HomeViewModel(
             is ApiResult.Failure -> error = error ?: r.error
         }
         meCall?.await()?.let { r ->
-            if (r is ApiResult.Success) theirGrants = loadTheirGrants(r.value.families.map { it.id })
+            if (r is ApiResult.Success) {
+                theirGrants = loadTheirGrants(r.value.families.map { it.id })
+                refreshRecipients()
+            }
         }
         myFix = fix.await()
         val protectionStatus = status.await()
@@ -139,6 +151,7 @@ class HomeViewModel(
                     position = myFix?.let { f -> GeoPoint(f.lat, f.lng) },
                     recordedAtMs = myFix?.recordedAtMs,
                     activity = protectionStatus.activity ?: myFix?.activity,
+                    speedKmh = Formats.speedKmh(myFix?.speedMps),
                     batteryPct = battery.percent(),
                     place = places[HomeUiState.ME],
                 ),
@@ -147,7 +160,7 @@ class HomeViewModel(
             )
         }
         rebuild()
-        fitCameraOnce()
+        fitCameraToEveryone()
         nameNewPlaces()
     }
 
@@ -169,10 +182,16 @@ class HomeViewModel(
         }
     }
 
-    /** "I'm safe now" on my own open SOS/accident. */
+    /** "I'm safe now" on my own open SOS/accident (the screen asked for confirmation). */
     fun resolveOwnIncident() {
         val key = state.value.ownIncident?.incidentKey ?: return
-        viewModelScope.launch { incidents.resolveOwn(key, Resolution.USER_OK) }
+        viewModelScope.launch { resolveOwn(key) }
+    }
+
+    /** "Call" had no number for [userId]: remember the one picked from the address book. */
+    fun rememberPhone(userId: String, phone: String) {
+        phoneBook?.remember(userId, phone)
+        rebuild()
     }
 
     /** "Retry" on the error banner: refresh everything now instead of waiting for the next poll. */
@@ -192,6 +211,11 @@ class HomeViewModel(
     }
 
     private fun rebuild() {
+        val phones = lastLocations.mapNotNull { m ->
+            (phoneBook?.phoneFor(m.userId, m.displayName, contactList)
+                ?: contactList.firstOrNull { it.name.trim().equals(m.displayName.trim(), ignoreCase = true) }?.phone)
+                ?.let { m.userId to it }
+        }.toMap()
         val members = MemberMapper.map(lastLocations, theirGrants, lastIncidents, myFix, places, phones)
         state.update { s ->
             s.copy(
@@ -205,12 +229,23 @@ class HomeViewModel(
     private fun allPositions(): List<GeoPoint> =
         listOfNotNull(state.value.me.position) + state.value.members.mapNotNull { it.position }
 
-    private fun fitCameraOnce() {
-        if (fittedOnce) return
-        val points = allPositions()
-        if (points.isEmpty()) return
-        fittedOnce = true
-        state.update { it.copy(camera = CameraRequest(CameraTarget.Fit(points), id = ++cameraSeq, animate = false)) }
+    /**
+     * Fits everyone on the map: once at the start, and again whenever somebody who was not on the map appears (a
+     * member switched to Live, or their first fix arrived), so nobody stays off-screen until the next app start.
+     * Members moving or disappearing do not move the camera (the user may be looking at something).
+     */
+    private fun fitCameraToEveryone() {
+        val visible = buildSet {
+            if (state.value.me.position != null) add(HomeUiState.ME)
+            state.value.members.forEach { m -> if (m.position != null) add(m.userId) }
+        }
+        val previous = fittedIds
+        val decision = MapFit.decide(previous, visible)
+        fittedIds = decision.fitted
+        if (!decision.refit) return
+        state.update {
+            it.copy(camera = CameraRequest(CameraTarget.Fit(allPositions()), id = ++cameraSeq, animate = previous != null))
+        }
     }
 
     /** Geocodes positions that moved to a new ~100 m cell; results arrive in the background. */

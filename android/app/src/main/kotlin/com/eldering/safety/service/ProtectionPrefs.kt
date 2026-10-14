@@ -23,7 +23,8 @@ object ProtectionPrefs {
 
     /**
      * Protection is armed once the user has been through the permission walkthrough: from then on the service is
-     * (re)started by the app, at boot, after an update and by activity transitions — signed in or not.
+     * (re)started by the app, at boot, after an update and by activity transitions. An explicit sign-out disarms it
+     * (the next sign-in arms it again); an expired session does not (protection keeps running, uploads wait).
      */
     fun isArmed(ctx: Context): Boolean = prefs(ctx).getBoolean(ARMED, false)
 
@@ -53,6 +54,9 @@ object ProtectionPrefs {
     fun setLastPauseReason(ctx: Context, reason: String?) = prefs(ctx).edit {
         if (reason == null) remove(LAST_PAUSE_REASON) else putString(LAST_PAUSE_REASON, reason.take(200))
     }
+
+    /** Sign-out: forget per-account state (which family alerts were already notified). */
+    fun clearAccountState(ctx: Context) = prefs(ctx).edit { remove(NOTIFIED_ALERTS) }
 
     /**
      * Records that a family-alert notification was shown for [incidentId]. Returns false if it already was

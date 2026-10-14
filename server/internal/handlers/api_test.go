@@ -804,10 +804,15 @@ func TestPublicSharePage(t *testing.T) {
 			t.Fatalf("share data leaks %q: %s", leak, r.body)
 		}
 	}
+	type sharedPoint struct {
+		Lat, Lng  float64
+		AccuracyM *float32 `json:"accuracy_m"`
+	}
 	var d struct {
-		Kind, Status string
-		Latest       *struct{ Lat, Lng float64 }
-		Trail        []struct {
+		Kind, Status     string
+		IncidentLocation *sharedPoint `json:"incident_location"`
+		Latest           *sharedPoint
+		Trail            []struct {
 			Lat, Lng float64
 			Landmark *string
 		}
@@ -815,6 +820,23 @@ func TestPublicSharePage(t *testing.T) {
 	r.decode(t, &d)
 	if d.Kind != "vehicle_crash" || d.Status != "active" || len(d.Trail) != 3 || d.Latest == nil || d.Latest.Lat != 19.0760 {
 		t.Fatalf("share data: %+v", d)
+	}
+	// The incident point carries no accuracy of its own: it comes from the trail fix at the same coordinates.
+	if il := d.IncidentLocation; il == nil || il.Lat != 19.0760 || il.AccuracyM == nil || *il.AccuracyM != 6 {
+		t.Fatalf("incident_location: %+v", d.IncidentLocation)
+	}
+	// lat/lng only (no trail): the accuracy is unknown (null), and latest is the incident point.
+	var bare createIncidentResponse
+	alice.must("POST", "/v1/incidents", map[string]any{"kind": "sos", "detected_at": time.Now().UTC().Format(time.RFC3339Nano), "lat": 19.1, "lng": 72.9},
+		http.StatusCreated, &bare)
+	r = a.expect(a.call("GET", sharePath(t, bare.ShareURL)+"/data", "", nil), http.StatusOK)
+	if !strings.Contains(string(r.body), `"incident_location":{"lat":19.1,"lng":72.9,`) || !strings.Contains(string(r.body), `"accuracy_m":null`) {
+		t.Fatalf("lat/lng-only share data: %s", r.body)
+	}
+	d.IncidentLocation, d.Latest = nil, nil
+	r.decode(t, &d)
+	if d.IncidentLocation == nil || d.IncidentLocation.AccuracyM != nil || d.Latest == nil || d.Latest.Lat != 19.1 || len(d.Trail) != 0 {
+		t.Fatalf("lat/lng-only share data: %+v", d)
 	}
 
 	// HTML page: CSP, noindex, no-store, escaped landmarks, vendored module script.

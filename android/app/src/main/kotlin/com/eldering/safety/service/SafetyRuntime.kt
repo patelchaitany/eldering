@@ -19,8 +19,11 @@ interface SafetyControl {
     /** One line per aspect of the service's state, for `DEBUG_STATUS`. */
     suspend fun statusLines(): List<String>
 
-    /** The still-mode keep-alive alarm fired; call [done] when finished (the receiver holds `goAsync`). */
-    fun onKeepAliveAlarm(done: () -> Unit)
+    /** The still-mode keep-alive alarm fired (main thread). Returns at once; the work runs under its own wakelock. */
+    fun onKeepAliveAlarm()
+
+    /** The speed-mode staleness alarm fired (main thread). */
+    fun onModeCheckAlarm()
 }
 
 /**

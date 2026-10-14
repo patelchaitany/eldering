@@ -60,6 +60,9 @@ class DetectionEventRepository(
 
     suspend fun labeled(): List<DetectionEventRecord> = dao.labeled()
 
+    /** Deletes the whole log (sign-out / another account on this phone). */
+    suspend fun clear(): Int = dao.clear()
+
     /** Unlabeled events are kept 30 days, labeled ones 180 days. */
     suspend fun prune(): Int {
         val now = time.nowMillis()

@@ -11,15 +11,37 @@ plugins {
 }
 
 /**
- * Public API origin (SPEC "Server"). Same for debug and release. Set `eldering.baseUrl` in
- * local.properties (not committed) or the ELDERING_BASE_URL environment variable.
+ * Public API origin (SPEC "Server"), https only. Used by release builds, and by debug builds unless a debug
+ * override is set. Set `eldering.baseUrl` in local.properties (not committed) or the ELDERING_BASE_URL environment
+ * variable.
  */
 val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
-val baseUrl = (localProps.getProperty("eldering.baseUrl")
-    ?: System.getenv("ELDERING_BASE_URL")
-    ?: "https://safety.example.com").trimEnd('/')
+
+fun configValue(property: String, envVar: String): String? =
+    (localProps.getProperty(property) ?: System.getenv(envVar))?.trim()?.trimEnd('/')?.takeIf { it.isNotEmpty() }
+
+val baseUrl = configValue("eldering.baseUrl", "ELDERING_BASE_URL") ?: "https://safety.example.com"
+require(baseUrl.startsWith("https://")) {
+    "eldering.baseUrl must be an https URL (it ships in release builds): $baseUrl. " +
+        "For a local http backend set eldering.debugBaseUrl instead."
+}
+
+/**
+ * Optional DEBUG-ONLY API origin, e.g. a local backend for the emulator: `eldering.debugBaseUrl=http://10.0.2.2:8095`
+ * in local.properties (or ELDERING_DEBUG_BASE_URL). Release builds never see it. Cleartext http is accepted only for
+ * 10.0.2.2 (the emulator's host loopback) and localhost (`adb reverse`), matching src/debug/res/xml/
+ * network_security_config.xml and AppConfig's debug rule; anything else must be https.
+ */
+val debugBaseUrl = configValue("eldering.debugBaseUrl", "ELDERING_DEBUG_BASE_URL") ?: baseUrl
+require(
+    debugBaseUrl.startsWith("https://") ||
+        Regex("""http://(?:10\.0\.2\.2|localhost)(?::(\d{1,5}))?""").matchEntire(debugBaseUrl)
+            ?.groupValues?.get(1)?.let { it.isEmpty() || it.toInt() in 1..65535 } == true,
+) {
+    "eldering.debugBaseUrl must be https, or http://10.0.2.2[:port] / http://localhost[:port]: $debugBaseUrl"
+}
 val mapStyleUrl = "https://tiles.openfreemap.org/styles/liberty"
 
 android {
@@ -41,7 +63,7 @@ android {
         debug {
             // Deliberately no applicationIdSuffix: the package stays com.eldering.safety in debug builds
             // (adb/debug-inject commands in SPEC use that package name).
-            buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
+            buildConfigField("String", "BASE_URL", "\"$debugBaseUrl\"")
             buildConfigField("String", "MAP_STYLE_URL", "\"$mapStyleUrl\"")
         }
         release {

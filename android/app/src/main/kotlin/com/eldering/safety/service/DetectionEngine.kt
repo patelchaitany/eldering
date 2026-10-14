@@ -31,7 +31,8 @@ import kotlinx.coroutines.launch
  * The live detection pipeline: one [AccidentDetector] fed by [SensorPipeline] on a dedicated thread (the detector
  * is not thread-safe, so every call into it is made on [handler]'s thread).
  *
- * [onEvent] and [onPossibleAccident] are invoked on that thread; hand work off quickly.
+ * [onEvent], [onPossibleAccident], [onCandidatesSettled], [onSignificantMotion] and [onStillness] are invoked on
+ * that thread; hand work off quickly.
  *
  * Debug injection ([inject]) replays a `SyntheticTraces` scenario **through this live detector**: for the
  * duration of the replay the trace replaces the real sensor stream (real samples are counted and dropped), its
@@ -45,13 +46,27 @@ class DetectionEngine(
     private val detectorConfig: DetectorConfig = DetectorConfig(),
     private val verboseCandidates: Boolean = false,
     private val onEvent: (event: DetectionEvent, mode: Mode, windowJson: String) -> Unit,
+    /** The cheap trigger found a candidate peaking at [tNanos] (sensor time). */
     private val onPossibleAccident: (tNanos: Long) -> Unit,
+    /**
+     * A verdict was reported and no candidate is waiting any more (end a possible-accident hold early).
+     * [emitted]: one of those verdicts was an accident (the alert takes over the high rate).
+     */
+    private val onCandidatesSettled: (emitted: Boolean) -> Unit = {},
+    /** The significant-motion sensor fired (STILL tier). */
+    private val onSignificantMotion: () -> Unit = {},
+    /** Accelerometer-only stillness changed (see [StillnessMonitor]; used when Activity Recognition is missing). */
+    private val onStillness: (still: Boolean) -> Unit = {},
 ) {
     private val thread = HandlerThread("eldering-detector", Process.THREAD_PRIORITY_DEFAULT).apply { start() }
     val handler: Handler = Handler(thread.looper)
     private val scope = CoroutineScope(SupervisorJob() + handler.asCoroutineDispatcher("eldering-detector"))
 
-    val pipeline = SensorPipeline(sensorManager, powerManager, handler, ::onLiveSample)
+    val pipeline = SensorPipeline(sensorManager, powerManager, handler, ::onLiveSample, onSignificantMotion = ::onMotion)
+
+    private val stillness = StillnessMonitor(stillStdG = detectorConfig.stillStdG.toDouble())
+    private var verdictSeen = false
+    private var emittedSinceSettle = false
 
     private val detector = AccidentDetector(detectorConfig) { event -> emit(event) }.also { d ->
         d.candidateObserver = ::onCandidate
@@ -150,6 +165,7 @@ class DetectionEngine(
     // ------------------------------------------------------------------ live stream
 
     private fun onLiveSample(s: SensorSample) {
+        if (s.kind == SensorKind.ACCEL && stillness.onAccel(s.tNanos, s.x, s.y, s.z)) onStillness(stillness.isStill)
         if (SystemClock.elapsedRealtimeNanos() < gateUntilNanos || injectJob?.isActive == true) {
             gated.incrementAndGet()
             return
@@ -161,9 +177,27 @@ class DetectionEngine(
         pipeline.recent.add(s)
         if (s.kind == SensorKind.ACCEL) lastAccelT = max(lastAccelT, s.tNanos)
         detector.onSample(s)
+        if (verdictSeen) {
+            verdictSeen = false
+            if (detector.pendingCandidates == 0) {
+                onCandidatesSettled(emittedSinceSettle)
+                emittedSinceSettle = false
+            }
+        }
     }
 
+    private fun onMotion() {
+        val wasStill = stillness.isStill
+        stillness.reset()
+        if (wasStill) onStillness(false)
+        onSignificantMotion()
+    }
+
+    /** Accelerometer-only stillness right now (detector thread state, read anywhere for status). */
+    val sensorStill: Boolean get() = stillness.isStill
+
     private fun emit(event: DetectionEvent) {
+        emittedSinceSettle = true
         events.incrementAndGet()
         lastEvent = "${event.kind} conf=${"%.2f".format(event.confidence)} reason=${event.reason}"
         Log.i(TAG, "Detection: $lastEvent")
@@ -176,6 +210,7 @@ class DetectionEngine(
     }
 
     private fun onCandidate(c: CandidateOutcome) {
+        verdictSeen = true
         candidates.incrementAndGet()
         lastCandidate = "mode=${c.mode} kind=${c.kind ?: "-"} verdict=${c.verdict}"
         if (verboseCandidates) Log.i(TAG, "Candidate: $lastCandidate conf=${"%.2f".format(c.confidence)}")

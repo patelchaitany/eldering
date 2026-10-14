@@ -126,7 +126,7 @@ class SosViewModel(
             SmsOutcome.SENT -> add(DeliveryLine(UiText.res(R.string.alert_delivery_contacts_sms), DeliveryState.SENT))
             SmsOutcome.DRY_RUN -> add(DeliveryLine(UiText.res(R.string.alert_delivery_contacts_sms), DeliveryState.DRY_RUN))
             SmsOutcome.FAILED -> add(DeliveryLine(UiText.res(R.string.alert_delivery_contacts_sms), DeliveryState.FAILED))
-            SmsOutcome.NO_PERMISSION, SmsOutcome.NOT_SUPPORTED -> add(DeliveryLine(UiText.res(R.string.alert_delivery_contacts_sms), DeliveryState.NOT_SENT))
+            SmsOutcome.NO_PERMISSION, SmsOutcome.NOT_SUPPORTED, SmsOutcome.CANCELLED -> add(DeliveryLine(UiText.res(R.string.alert_delivery_contacts_sms), DeliveryState.NOT_SENT))
             SmsOutcome.NO_CONTACTS, null -> Unit
         }
     }

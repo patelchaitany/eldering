@@ -38,6 +38,9 @@
     <string name="alert_delivery_contacts_sms">Emergency contacts · SMS</string>
     <string name="alert_sharing_live">Sharing live location every 15 s for the next 60 minutes. Last 1 hour trail with landmarks is attached.</string>
     <string name="alert_safe_now">I\'m safe now — tell family</string>
+    <string name="alert_safe_confirm_title">Tell your family you\'re safe?</string>
+    <string name="alert_safe_confirm_body">This ends the alert for everyone and stops sharing your live location. Family and any emergency contacts who were texted are told you\'re OK.</string>
+    <string name="alert_safe_confirm_yes">Yes, I\'m safe</string>
 
     <string name="alert_glad_ok">Glad you\'re OK</string>
     <string name="alert_what_happened">Help us get better. What happened?</string>
@@ -83,6 +86,13 @@
     <string name="family_alert_also_alerted">Also alerted</string>
     <string name="family_alert_on_my_way">I\'m going there</string>
     <string name="family_alert_on_my_way_done">On your way</string>
+    <string name="family_alert_on_way_banner">You\'re on your way — %s\'s phone shows it</string>
+    <string name="family_alert_call_pick_a11y">Call %s: choose their number from your contacts</string>
+    <string name="family_alert_you">You</string>
+    <plurals name="family_alert_contacts">
+        <item quantity="one">%d contact</item>
+        <item quantity="other">%d contacts</item>
+    </plurals>
     <string name="family_alert_is_safe">%s is safe</string>
     <string name="family_alert_resolved_handled">Marked as handled — family has been told</string>
     <string name="family_alert_resolved_ok">%s said they\'re OK — alert closed</string>

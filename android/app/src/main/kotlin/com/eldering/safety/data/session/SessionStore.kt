@@ -12,6 +12,7 @@ import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.Base64
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
@@ -63,6 +65,26 @@ class SessionStore(
 
     suspend fun clear() {
         mutex.withLock { writeLocked(null) }
+    }
+
+    /**
+     * The account whose personal data (trail, detection log, emergency contacts) is on this phone. Set with every
+     * saved session and kept when a session merely expires, so a *different* account signing in later can be
+     * detected and the previous account's data discarded first. Not a secret (a user id), stored in plaintext.
+     */
+    suspend fun dataOwner(): String? = try {
+        dataStore.data.first()[KEY_OWNER]
+    } catch (e: IOException) {
+        null
+    }
+
+    /** Clears the owner after the device data was wiped (explicit sign-out). */
+    suspend fun clearDataOwner() {
+        try {
+            dataStore.edit { it.remove(KEY_OWNER) }
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not clear the data owner")
+        }
     }
 
     /** See [SessionProvider.replaceSessionBlocking]. */
@@ -115,8 +137,12 @@ class SessionStore(
             return null
         } ?: return null
         return try {
-            val plaintext = cipher.decrypt(Base64.getDecoder().decode(blob))
-            json.decodeFromString(Session.serializer(), plaintext.decodeToString())
+            // Keystore (a binder call) and JSON off the caller's thread: the first read happens during app start,
+            // often from the main thread.
+            withContext(Dispatchers.Default) {
+                val plaintext = cipher.decrypt(Base64.getDecoder().decode(blob))
+                json.decodeFromString(Session.serializer(), plaintext.decodeToString())
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -132,9 +158,10 @@ class SessionStore(
     private suspend fun writeLocked(session: Session?) {
         state.value = Loaded(session)
         try {
-            val blob = session?.let(::encode)
+            val blob = session?.let { encode(it) }
             dataStore.edit { prefs ->
                 if (blob == null) prefs.remove(KEY_SESSION) else prefs[KEY_SESSION] = blob
+                if (session != null) prefs[KEY_OWNER] = session.userId
             }
         } catch (e: IOException) {
             Log.e(TAG, "Could not persist session; kept in memory only", e)
@@ -145,7 +172,9 @@ class SessionStore(
         }
     }
 
-    private fun encode(session: Session): String {
+    private suspend fun encode(session: Session): String = withContext(Dispatchers.Default) { encodeNow(session) }
+
+    private fun encodeNow(session: Session): String {
         val plaintext = json.encodeToString(Session.serializer(), session).encodeToByteArray()
         return Base64.getEncoder().encodeToString(cipher.encrypt(plaintext))
     }
@@ -153,6 +182,7 @@ class SessionStore(
     companion object {
         private const val TAG = "SessionStore"
         private val KEY_SESSION = stringPreferencesKey("session_v1")
+        private val KEY_OWNER = stringPreferencesKey("data_owner_v1")
 
         /** Keystore alias of the session key. */
         const val KEY_ALIAS = "eldering.session.v1"

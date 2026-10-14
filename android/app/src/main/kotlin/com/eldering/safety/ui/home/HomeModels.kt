@@ -55,7 +55,7 @@ data class MemberUi(
     val distanceM: Double? = null,
     /** Their active incident visible to me, if any. */
     val activeIncidentId: String? = null,
-    /** On-device emergency contact with the same name (used to pre-fill "Call"). */
+    /** Number for "Call" (picked on this phone, or an emergency contact with the same name). */
     val phone: String? = null,
 ) {
     val isSharingLive: Boolean get() = visibility == MemberVisibility.LIVE || visibility == MemberVisibility.LIVE_NO_FIX
@@ -67,6 +67,8 @@ data class MeUi(
     val position: GeoPoint? = null,
     val recordedAtMs: Long? = null,
     val activity: Activity? = null,
+    /** My speed from the last fix (shown while moving, "Driving · 38 km/h"). */
+    val speedKmh: Int? = null,
     val batteryPct: Int? = null,
     val place: String? = null,
     /** Effective state from `/v1/me` (null until loaded). */
@@ -117,6 +119,7 @@ object MemberMapper {
         incidents: List<IncidentSummaryDto>,
         me: MyFix?,
         places: Map<String, String>,
+        /** user id → phone number. */
         phones: Map<String, String>,
     ): List<MemberUi> = locations.map { dto ->
         val position = if (dto.hasPosition) GeoPoint(dto.lat!!, dto.lng!!) else null
@@ -147,7 +150,7 @@ object MemberMapper {
             place = places[dto.userId],
             distanceM = if (position != null && me != null) Geo.distanceM(me.lat, me.lng, position.lat, position.lng) else null,
             activeIncidentId = incidents.firstOrNull { it.userId == dto.userId && !it.isMine }?.id,
-            phone = phones[dto.displayName.trim().lowercase()],
+            phone = phones[dto.userId],
         )
     }.sortedWith(compareBy<MemberUi>({ it.activeIncidentId == null }, { it.visibility.ordinal }, { it.name.lowercase() }))
 
@@ -166,5 +169,21 @@ object MemberMapper {
             }
         }
         return result
+    }
+}
+
+/**
+ * When Home fits the camera to everyone: the first time anybody is on the map, and whenever somebody appears who
+ * was not on it at the last fit (E2E: a member who switched to Live 1.4 km away stayed off-screen until the app was
+ * restarted). People moving or disappearing never move the camera.
+ */
+object MapFit {
+    data class Decision(val refit: Boolean, val fitted: Set<String>?)
+
+    /** [previous]: who was on the map at the last fit (null = never fitted); [visible]: who has a position now. */
+    fun decide(previous: Set<String>?, visible: Set<String>): Decision = when {
+        visible.isEmpty() -> Decision(refit = false, fitted = previous)
+        previous != null && previous.containsAll(visible) -> Decision(refit = false, fitted = previous.intersect(visible))
+        else -> Decision(refit = true, fitted = visible)
     }
 }

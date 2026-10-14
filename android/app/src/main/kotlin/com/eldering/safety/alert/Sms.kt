@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.eldering.safety.network.IncidentKind
@@ -51,11 +52,17 @@ fun interface SmsSender {
 class AndroidSmsSender(
     private val context: Context,
     private val realSmsAllowed: suspend () -> Boolean,
+    /** Emergency services must never get an automated text (SPEC: the app never contacts them by itself). */
+    private val isEmergencyNumber: (String) -> Boolean = EmergencyNumbers::isStaticEmergencyNumber,
 ) : SmsSender {
     private val ids = AtomicLong(System.currentTimeMillis() and 0xFFFFF)
 
     override suspend fun send(to: String, body: String): SmsResult {
         val id = ids.incrementAndGet()
+        if (isEmergencyNumber(to)) {
+            Log.w(LOG_TAG, "SMS #$id to ${mask(to)} refused: emergency number")
+            return SmsResult.Failed("emergency number")
+        }
         if (!realSmsAllowed()) {
             Log.i(LOG_TAG, "DRY-RUN SMS #$id to ${mask(to)} (${body.length} chars, nothing sent):\n$body")
             return SmsResult.DryRun
@@ -174,5 +181,38 @@ object SmsText {
         }
     }
 
+    /** The follow-up after "I'm safe now" (or "I'm OK" right after the alert went out). */
+    fun safe(name: String?, detectedAtMs: Long, zone: ZoneId = ZoneId.systemDefault()): String {
+        val who = name?.trim()?.takeIf { it.isNotEmpty() }?.take(40) ?: "The owner of this phone"
+        val time = DateTimeFormatter.ofPattern("HH:mm", Locale.ROOT).withZone(zone).format(Instant.ofEpochMilli(detectedAtMs))
+        return "ELDERING UPDATE: $who says they are OK now (alert at $time)."
+    }
+
     private fun coord(v: Double): String = String.format(Locale.ROOT, "%.5f", v)
+}
+
+/**
+ * Emergency service numbers. The app only ever opens the dialer for them (ACTION_DIAL); they must never be saved
+ * as SMS contacts nor texted automatically, not even by a false alarm.
+ */
+object EmergencyNumbers {
+    /** Common short codes worldwide, for phones without a SIM (the platform list needs one). */
+    private val STATIC = setOf("000", "100", "101", "102", "108", "110", "112", "118", "119", "190", "192", "193", "911", "999")
+    private val SEPARATORS = setOf(' ', '-', '.', '(', ')', '/')
+
+    fun isStaticEmergencyNumber(number: String): Boolean {
+        val cleaned = number.trim().removePrefix("+").filterNot { it in SEPARATORS }
+        return cleaned.isNotEmpty() && cleaned.all { it in '0'..'9' } && cleaned in STATIC
+    }
+
+    /** [isStaticEmergencyNumber] or the SIM/network's own list (`TelephonyManager.isEmergencyNumber`). */
+    fun isEmergencyNumber(context: Context, number: String): Boolean {
+        if (isStaticEmergencyNumber(number)) return true
+        val tm = context.getSystemService(TelephonyManager::class.java) ?: return false
+        return try {
+            tm.isEmergencyNumber(number)
+        } catch (e: RuntimeException) { // IllegalStateException without telephony, UnsupportedOperationException
+            false
+        }
+    }
 }

@@ -2,7 +2,9 @@ package com.eldering.safety.alert
 
 import android.util.Log
 import com.eldering.safety.core.TimeSource
+import com.eldering.safety.core.catchingNonCancellation
 import com.eldering.safety.data.db.EmergencyContact
+import com.eldering.safety.data.db.OwnIncidentStatus
 import com.eldering.safety.data.repository.IncidentDetails
 import com.eldering.safety.data.repository.IncidentDraft
 import com.eldering.safety.data.repository.IncidentRepository
@@ -21,20 +23,19 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Sends an alert (SPEC: IncidentSender):
  * 1. Trail: the frozen pre-event hour plus everything recorded since, downsampled ([Config.maxTrailPoints]).
  * 2. Landmarks: Geocoder names for ~10 key points ([KeyPoints]) within [Config.landmarkBudgetMs]; skipped offline.
- * 3. `POST /v1/incidents` through the outbox ([IncidentRepository.report]): stored first, sent now, retried by
- *    WorkManager if offline. Skipped when signed out.
+ * 3. `POST /v1/incidents` through the outbox ([IncidentRepository.report], keyed by [ActiveAlert.incidentKey]):
+ *    stored first, sent now, retried by WorkManager if offline. Skipped when signed out.
  * 4. SMS to the device's emergency contacts with the share link if the server answered within
  *    [Config.shareUrlWaitMs], and always the raw coordinates + a maps link (offline fallback). SMS never waits
- *    for a dead server longer than that.
+ *    for a dead server longer than that, and none goes out once the user said they are OK
+ *    ([DispatchHooks.stillWanted]).
  * 5. Live trail updates every [Config.liveIntervalMs] for [Config.liveDurationMs] (also nudged by location
  *    callbacks through [pokeLive], since timers stall while the CPU sleeps), until resolved.
  *
@@ -75,32 +76,35 @@ class IncidentSender(
 
     private val live = ConcurrentHashMap<String, LiveSession>()
 
+    /** Phone numbers that got the alert SMS, per incident key (for the "they are OK" follow-up). Memory only. */
+    private val texted = ConcurrentHashMap<String, List<String>>()
+
     /** Incident keys with live updates running (debug status). */
     val liveIncidents: Set<String> get() = live.keys.toSet()
 
-    override suspend fun dispatch(alert: ActiveAlert, frozenTrail: List<TrailPoint>, onLiveEnded: (String) -> Unit): DispatchResult {
+    override suspend fun dispatch(alert: ActiveAlert, frozenTrail: List<TrailPoint>, hooks: DispatchHooks): DispatchResult {
         val now = time.nowMillis()
-        val after = runCatching { trailStore.points(alert.detectedAtMs + 1, now) }.getOrDefault(emptyList())
+        val after = catchingNonCancellation { trailStore.points(alert.detectedAtMs + 1, now) } ?: emptyList()
         val merged = (frozenTrail + after).distinctBy { it.recordedAtMs }.sortedBy { it.recordedAtMs }
         val trail = TrailDownsampler.downsample(merged, config.maxTrailPoints)
         val incidentPoint = trail.lastOrNull { it.recordedAtMs <= alert.detectedAtMs } ?: trail.firstOrNull()
         val latest = trail.lastOrNull()
 
-        val contacts = runCatching { recipients() }.getOrDefault(emptyList())
-        val names = if (isOnline()) resolveLandmarks(trail, alert.detectedAtMs) else emptyMap()
+        val contacts = if (hooks.smsDone != null) emptyList() else catchingNonCancellation { recipients() } ?: emptyList()
+        val names = if (isOnline() && hooks.stillWanted()) resolveLandmarks(trail, alert.detectedAtMs) else emptyMap()
         val draft = IncidentDraft(
             kind = alert.kind,
             detectedAtMs = alert.detectedAtMs,
             lat = incidentPoint?.lat,
             lng = incidentPoint?.lng,
-            details = details(alert, contacts.size),
+            details = details(alert, if (hooks.smsDone != null) alert.emergencyContactCount else contacts.size),
             trail = trail.mapIndexed { i, p -> p.toDto(names[i]) },
         )
 
         // Upload in the background scope: the SMS must not wait for a slow server beyond shareUrlWaitMs.
         val report = scope.async {
             try {
-                incidents.report(draft)
+                incidents.report(draft, alert.incidentKey)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -108,26 +112,31 @@ class IncidentSender(
                 IncidentRepository.ReportResult.Rejected(DispatchResult.LOCAL_FAILURE_KEY, ApiError.Unexpected(e))
             }
         }
-        val early = withTimeoutOrNull(config.shareUrlWaitMs) { report.await() }
-        val shareUrl = (early as? IncidentRepository.ReportResult.Sent)?.shareUrl
-        val position = latest ?: incidentPoint
-        val text = SmsText.build(
-            name = runCatching { senderName() }.getOrNull(),
-            kind = alert.kind,
-            detectedAtMs = alert.detectedAtMs,
-            lat = position?.lat,
-            lng = position?.lng,
-            accuracyM = position?.accuracyM,
-            shareUrl = shareUrl,
-        )
-        val smsOutcome = sendSms(contacts, text)
+        val smsOutcome = hooks.smsDone ?: run {
+            val early = if (hooks.stillWanted()) withTimeoutOrNull(config.shareUrlWaitMs) { report.await() } else null
+            val shareUrl = (early as? IncidentRepository.ReportResult.Sent)?.shareUrl
+            val position = latest ?: incidentPoint
+            val text = SmsText.build(
+                name = catchingNonCancellation { senderName() },
+                kind = alert.kind,
+                detectedAtMs = alert.detectedAtMs,
+                lat = position?.lat,
+                lng = position?.lng,
+                accuracyM = position?.accuracyM,
+                shareUrl = shareUrl,
+            )
+            sendSms(alert.incidentKey, contacts, text, hooks.stillWanted).also(hooks.onSmsDone)
+        }
         val result = report.await()
         Log.i(TAG, "Alert ${alert.kind}: ${trail.size} trail points, ${names.size} landmarks, upload=${result.javaClass.simpleName}, sms=$smsOutcome")
 
         val key = (result as? IncidentRepository.ReportResult.Sent)?.incidentKey
             ?: (result as? IncidentRepository.ReportResult.Queued)?.incidentKey
-        if (key != null) startLive(key, sinceMs = maxOf(latest?.recordedAtMs ?: now, alert.detectedAtMs), onLiveEnded)
-        return DispatchResult(result, smsOutcome, contacts.size)
+        if (key != null) {
+            startLive(key, sinceMs = maxOf(latest?.recordedAtMs ?: now, alert.detectedAtMs), endsAtMs = time.nowMillis() + config.liveDurationMs, hooks.onLiveEnded)
+        }
+        val recipientCount = if (hooks.smsDone != null) alert.emergencyContactCount else contacts.size
+        return DispatchResult(result, smsOutcome, recipientCount)
     }
 
     override suspend fun resolve(incidentKey: String, resolution: Resolution) {
@@ -136,6 +145,44 @@ class IncidentSender(
             session.job?.cancel()
         }
         incidents.resolveOwn(incidentKey, resolution)
+    }
+
+    override suspend fun resumeLive(
+        alert: ActiveAlert,
+        liveEndsAtMs: Long,
+        onLiveEnded: (String) -> Unit,
+    ): IncidentRepository.ReportResult? {
+        val key = alert.incidentKey
+        val own = catchingNonCancellation { incidents.ownIncident(key) } ?: return null
+        if (own.status != OwnIncidentStatus.QUEUED && own.status != OwnIncidentStatus.ACTIVE) return null
+        if (time.nowMillis() >= liveEndsAtMs) return null
+        // Points pushed before the restart are sent again; the server ignores duplicates (same recorded_at).
+        startLive(key, sinceMs = alert.detectedAtMs, endsAtMs = liveEndsAtMs, onLiveEnded)
+        val serverId = own.serverId
+        val shareUrl = own.shareUrl
+        val expires = own.shareExpiresAtMs
+        return if (serverId != null && shareUrl != null && expires != null) {
+            IncidentRepository.ReportResult.Sent(key, serverId, shareUrl, expires)
+        } else {
+            IncidentRepository.ReportResult.Queued(key, null)
+        }
+    }
+
+    override suspend fun notifySafe(alert: ActiveAlert, smsWentOut: Boolean) {
+        val phones = texted.remove(alert.incidentKey)
+            ?: if (smsWentOut) catchingNonCancellation { recipients() }.orEmpty().map { it.phone } else emptyList()
+        if (phones.isEmpty()) return
+        val text = SmsText.safe(name = catchingNonCancellation { senderName() }, detectedAtMs = alert.detectedAtMs)
+        phones.forEach { phone ->
+            try {
+                sms.send(phone, text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Follow-up SMS failed: ${e.javaClass.simpleName}")
+            }
+        }
+        Log.i(TAG, "Told ${phones.size} emergency contact(s) that the alert is over")
     }
 
     /** A new location fix arrived: push live points now if the last push is at least one interval old. */
@@ -148,13 +195,13 @@ class IncidentSender(
         }
     }
 
-    private fun startLive(key: String, sinceMs: Long, onLiveEnded: (String) -> Unit) {
-        val session = LiveSession(key, sinceMs, time.nowMillis() + config.liveDurationMs)
+    private fun startLive(key: String, sinceMs: Long, endsAtMs: Long, onLiveEnded: (String) -> Unit) {
+        val session = LiveSession(key, sinceMs, endsAtMs)
         live.put(key, session)?.job?.cancel()
         session.job = scope.launch {
             var closedElsewhere = false
             try {
-                val ticks = config.liveDurationMs / config.liveIntervalMs
+                val ticks = ((endsAtMs - time.nowMillis()).coerceAtLeast(0)) / config.liveIntervalMs
                 var tick = 0L
                 while (tick < ticks && time.nowMillis() < session.endsAtMs) {
                     delay(config.liveIntervalMs)
@@ -218,16 +265,27 @@ class IncidentSender(
         return names.toMap()
     }
 
-    private suspend fun sendSms(contacts: List<EmergencyContact>, text: String): SmsOutcome {
+    /** Texts [contacts] one by one, stopping as soon as [stillWanted] turns false ("I'm OK" while sending). */
+    private suspend fun sendSms(incidentKey: String, contacts: List<EmergencyContact>, text: String, stillWanted: () -> Boolean): SmsOutcome {
         if (contacts.isEmpty()) return SmsOutcome.NO_CONTACTS
-        val results = contacts.map { contact ->
-            try {
+        val results = ArrayList<SmsResult>(contacts.size)
+        val reached = ArrayList<String>(contacts.size)
+        for (contact in contacts) {
+            if (!stillWanted()) break
+            val r = try {
                 sms.send(contact.phone, text)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 SmsResult.Failed(e.javaClass.simpleName)
             }
+            results += r
+            if (r is SmsResult.Queued || r is SmsResult.DryRun) reached += contact.phone
+        }
+        if (reached.isNotEmpty()) texted[incidentKey] = reached
+        if (results.isEmpty()) {
+            Log.i(TAG, "SMS skipped: the user said they are OK before it went out")
+            return SmsOutcome.CANCELLED
         }
         return when {
             results.any { it is SmsResult.Queued } -> SmsOutcome.SENT
@@ -241,9 +299,7 @@ class IncidentSender(
     private fun details(alert: ActiveAlert, contacts: Int): JsonObject {
         val base = alert.event?.let { IncidentDetails.fromDetection(it, alert.mode, Instant.ofEpochMilli(alert.detectedAtMs)) }
             ?: IncidentDetails.sos()
-        if (contacts <= 0) return base
-        val also = if (contacts == 1) "1 emergency contact (SMS)" else "$contacts emergency contacts (SMS)"
-        return JsonObject(base + ("also_alerted" to JsonPrimitive(also)))
+        return IncidentDetails.withRecipients(base, alert.familyRecipients, contacts)
     }
 
     private companion object {

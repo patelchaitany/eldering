@@ -102,6 +102,8 @@ class EmergencyContactsViewModel(private val repository: ContactsRepository) : V
             ContactsRepository.Problem.NAME_BLANK -> form.copy(nameError = R.string.contacts_error_name_blank)
             ContactsRepository.Problem.NAME_TOO_LONG -> form.copy(nameError = R.string.contacts_error_name_long)
             ContactsRepository.Problem.PHONE_INVALID -> form.copy(phoneError = R.string.contacts_error_phone)
+            ContactsRepository.Problem.PHONE_NO_COUNTRY_CODE -> form.copy(phoneError = R.string.contacts_error_country_code)
+            ContactsRepository.Problem.EMERGENCY_NUMBER -> form.copy(phoneError = R.string.contacts_error_emergency_number)
             ContactsRepository.Problem.DUPLICATE_PHONE -> form.copy(phoneError = R.string.contacts_error_duplicate)
             ContactsRepository.Problem.TOO_MANY -> form.copy(formError = R.string.contacts_error_too_many)
             ContactsRepository.Problem.NOT_FOUND -> form.copy(formError = R.string.contacts_error_not_found)

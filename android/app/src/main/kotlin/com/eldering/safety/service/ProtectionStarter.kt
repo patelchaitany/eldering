@@ -20,13 +20,16 @@ object ProtectionStarter {
     }
 
     /**
-     * Called from `MainActivity.onStart`: (re)starts the service from the foreground so it gets the `location`
-     * type and recovers from a force-stop, and re-registers activity transitions (Play services may drop them).
-     * Users who finished the walkthrough before protection existed are armed here.
+     * Called by `MainActivity` while it is started and someone is signed in: (re)starts the service from the
+     * foreground so it gets the `location` type and recovers from a force-stop, and re-registers activity
+     * transitions (Play services may drop them). Users who finished the walkthrough are armed here, which is also
+     * how protection comes back after a sign-out and the next sign-in. Nobody signed in: nothing starts (a
+     * signed-out phone records no trail).
      */
     fun onAppVisible(activity: ComponentActivity) {
         val ctx = activity.applicationContext
         activity.lifecycleScope.launch {
+            if (ctx.appGraph.sessionStore.current() == null) return@launch
             var armed = ProtectionPrefs.isArmed(ctx)
             if (!armed && ctx.appGraph.appPreferences.permissionsWalkthroughDone.first()) {
                 ProtectionPrefs.setArmed(ctx, true)

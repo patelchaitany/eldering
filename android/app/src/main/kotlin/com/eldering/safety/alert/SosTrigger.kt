@@ -42,6 +42,9 @@ enum class SmsOutcome {
     NOT_SUPPORTED,
 
     FAILED,
+
+    /** The user said they were OK before the SMS went out, so none was sent. */
+    CANCELLED,
 }
 
 /**

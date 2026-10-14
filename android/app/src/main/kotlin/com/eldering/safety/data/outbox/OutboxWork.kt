@@ -29,7 +29,8 @@ class WorkManagerOutboxScheduler(private val context: Context) : OutboxScheduler
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, BACKOFF_SECONDS, TimeUnit.SECONDS)
             .build()
-        // KEEP: a pending run will pick the new rows up; the worker re-checks before finishing.
+        // KEEP: a pending run will pick the new rows up; the worker re-checks before finishing. Not APPEND: live
+        // updates would chain a job every 15 s. Rows a racing KEEP drops are re-scheduled by the service tick.
         WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.KEEP, request)
     }
 
@@ -44,8 +45,10 @@ class OutboxWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result {
         val processor = applicationContext.appGraph.outboxProcessor
         var result = processor.drain(ignoreBackoff = true)
-        // Rows enqueued while we were sending would otherwise wait for the next schedule() call.
-        if (result.remaining > 0 && result.lastError == null && !result.signedOut) {
+        // Rows enqueued while we were sending: a schedule() made meanwhile is dropped by KEEP, so drain them here
+        // (bounded; the SafetyService housekeeping tick re-schedules anything still left behind).
+        var extra = 0
+        while (result.remaining > 0 && result.lastError == null && !result.signedOut && extra++ < MAX_EXTRA_PASSES) {
             result = processor.drain(ignoreBackoff = true)
         }
         return when {
@@ -60,5 +63,6 @@ class OutboxWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     private companion object {
         const val TAG = "OutboxWorker"
+        const val MAX_EXTRA_PASSES = 5
     }
 }

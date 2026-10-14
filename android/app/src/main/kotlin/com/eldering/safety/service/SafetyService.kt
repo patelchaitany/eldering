@@ -20,6 +20,8 @@ import com.eldering.detection.DetectionEvent
 import com.eldering.detection.Mode
 import com.eldering.safety.alert.AlertState
 import com.eldering.safety.core.appGraph
+import com.eldering.safety.core.catchingNonCancellation
+import com.eldering.safety.core.elapsedRealtimeNanosToWallMillis
 import com.eldering.safety.data.trail.TrailPoint
 import com.eldering.safety.data.trail.TrailSamplingPolicy
 import com.eldering.safety.data.trail.isMockFix
@@ -34,6 +36,7 @@ import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -44,15 +47,18 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Background accident protection (SPEC "SafetyService"): a foreground service (`location|specialUse`) that
  * - feeds accelerometer/gyroscope/(barometer) batches per movement mode into the live `AccidentDetector`
- *   ([DetectionEngine]), switching to full rate on a possible accident;
+ *   ([DetectionEngine]), switching to full rate on a fresh possible accident (not for every running stride) until
+ *   the detector's verdict;
  * - records an activity-adaptive Fused-location trail into `TrailStore` (location callbacks also drain the sensor
- *   FIFOs while the screen is off);
- * - sends the location heartbeat while sharing is on and raises a family-alert notification for its
- *   `pending_alerts`;
- * - hands detections to `AlertController` (countdown → IncidentSender).
+ *   FIFOs while the screen is off; in STILL significant motion and the keep-alive alarm do);
+ * - sends the location heartbeat while sharing is on, polls family alerts when it is not, and raises a
+ *   family-alert notification for them;
+ * - hands detections to `AlertController` (countdown → IncidentSender);
+ * - housekeeping: trail ring buffer, retention of the detection log and own incidents, outbox rescue.
  *
- * Detection runs whether or not anyone is signed in (uploads are then skipped; SMS still go out). Everything
- * here runs on the main thread except the detector, which has its own thread.
+ * Detection keeps running when a session expires (uploads wait for the next sign-in; SMS still go out). An explicit
+ * sign-out stops the service and disarms protection (`AppGraph`), and the app only starts it while someone is
+ * signed in. Everything here runs on the main thread except the detector, which has its own thread.
  */
 class SafetyService : LifecycleService(), SafetyControl {
 
@@ -62,6 +68,7 @@ class SafetyService : LifecycleService(), SafetyControl {
     private lateinit var heartbeat: HeartbeatController
     private val modes = ModeResolver()
     private val governor = PossibleAccidentGovernor()
+    private val walkingFixes = WalkingFixMonitor()
     private val fused by lazy { LocationServices.getFusedLocationProviderClient(this) }
     private val powerManager by lazy { getSystemService(PowerManager::class.java) }
 
@@ -82,6 +89,16 @@ class SafetyService : LifecycleService(), SafetyControl {
     private val fixes = AtomicInteger()
     private val stored = AtomicInteger()
     private var arRegistered: Boolean? = null
+
+    /** Elapsed-realtime ms until which significant motion keeps STILL out of the STILL tier. */
+    private var motionHintUntilMs = Long.MIN_VALUE
+    private var lastLocationDrainAtMs = Long.MIN_VALUE
+    private var keepAliveDueAtMs = Long.MIN_VALUE
+    private var keepAlivePeriodMs = 0L
+    private var keepAliveJob: Job? = null
+    private var modeCheckAtMs = Long.MIN_VALUE
+    private var lastRetentionAtMs = Long.MIN_VALUE
+    private var lastGovernorDecision = "-"
 
     private val holdLock by lazy {
         powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "eldering:PossibleAccident").apply { setReferenceCounted(false) }
@@ -105,13 +122,18 @@ class SafetyService : LifecycleService(), SafetyControl {
         ServiceNotifications.ensureChannels(this)
         batterySaver = powerManager.isPowerSaveMode
         if (graph.config.isDebug) modes.forced = ProtectionPrefs.forcedMode(this)
-        ProtectionPrefs.recognizedMode(this)?.let { (m, _) -> modes.onRecognized(m) }
+        ProtectionPrefs.recognizedMode(this)?.let { (m, atNanos) ->
+            modes.onRecognized(m, if (atNanos > 0) elapsedRealtimeNanosToWallMillis(atNanos) else graph.time.nowMillis())
+        }
         engine = DetectionEngine(
             sensorManager = getSystemService(SensorManager::class.java),
             powerManager = powerManager,
             verboseCandidates = graph.config.isDebug,
             onEvent = ::onDetection,
-            onPossibleAccident = { main.post { onPossibleAccident() } },
+            onPossibleAccident = { t -> main.post { onPossibleAccident(t) } },
+            onCandidatesSettled = { emitted -> main.post { onCandidatesSettled(emitted) } },
+            onSignificantMotion = { main.post { onSignificantMotion() } },
+            onStillness = { still -> main.post { onSensorStillness(still) } },
         )
         heartbeat = HeartbeatController(
             signedIn = { graph.sessionStore.current() != null },
@@ -120,7 +142,9 @@ class SafetyService : LifecycleService(), SafetyControl {
             send = { point, battery -> graph.locationRepository.sendHeartbeat(point, battery) },
             battery = { graph.batteryLevel.percent() },
             onPendingAlerts = ::onPendingAlerts,
+            pollAlerts = { graph.incidentRepository.active() },
             time = graph.time,
+            hasFamily = { graph.meStore.me.value?.families?.isNotEmpty() },
         )
         ContextCompat.registerReceiver(
             this,
@@ -129,6 +153,8 @@ class SafetyService : LifecycleService(), SafetyControl {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         graph.safetyRuntime.attach(this)
+        // An alert or "I'm safe now" stored but never handed to WorkManager (the process died mid-send).
+        lifecycleScope.launch(Dispatchers.IO) { runCatching { graph.incidentRepository.scheduleIfPending() } }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -170,6 +196,7 @@ class SafetyService : LifecycleService(), SafetyControl {
         engine.start(sensingPlan(), mode)
         applyLocation()
         updateKeepAliveAlarm()
+        updateModeCheckAlarm()
 
         lifecycleScope.launch {
             graph.alertController.state.collect { s -> onAlertState(s) }
@@ -178,6 +205,7 @@ class SafetyService : LifecycleService(), SafetyControl {
             graph.authRepository.isSignedIn.collect { value ->
                 signedIn = value
                 refreshNotification()
+                if (!value && graph.sessionStore.dataOwner() == null) stopSignedOut()
             }
         }
         lifecycleScope.launch {
@@ -192,13 +220,43 @@ class SafetyService : LifecycleService(), SafetyControl {
             arRegistered = TransitionRegistrar.register(this@SafetyService)
         }
         lifecycleScope.launch {
-            // Backstop for heartbeats and housekeeping when location callbacks are sparse (stalls in deep sleep).
+            // Backstop for heartbeats, mode expiry and housekeeping when location callbacks are sparse (stalls in
+            // deep sleep; the alarms cover that).
             while (true) {
                 delay(TICK_MS)
+                updateMode("tick")
+                replanIfStale()
                 sendHeartbeat(force = false)
-                withContext(Dispatchers.IO) {
-                    runCatching { graph.trailStore.prune() }
-                }
+                housekeeping()
+            }
+        }
+    }
+
+    /**
+     * Nobody is signed in and nobody owns the data on this phone: an explicit sign-out (or one made by an older app
+     * version, which left protection armed). A signed-out phone records no trail; the next sign-in starts again.
+     * An expired session keeps its owner and does not end up here.
+     */
+    private fun stopSignedOut() {
+        Log.i(TAG, "Nobody signed in: protection stops until the next sign-in")
+        ProtectionPrefs.setArmed(this, false)
+        stopSelf()
+    }
+
+    private suspend fun housekeeping() {
+        withContext(Dispatchers.IO) {
+            catchingNonCancellation { graph.trailStore.prune() }
+            // Outbox rows a racing WorkManager KEEP dropped (or left behind by a killed process) get scheduled again.
+            catchingNonCancellation { graph.incidentRepository.scheduleIfPending() }
+            // Who my accident alert reaches ("To Mom, Dad (app)" on the countdown): one small request per 30 min.
+            if (signedIn == true) catchingNonCancellation { graph.alertRecipients.refreshIfStale() }
+            val now = SystemClock.elapsedRealtime()
+            if (lastRetentionAtMs == Long.MIN_VALUE || now - lastRetentionAtMs >= RETENTION_EVERY_MS) {
+                lastRetentionAtMs = now
+                // Documented retention: detection log 30/180 days, own incidents and dead uploads a week.
+                val events = catchingNonCancellation { graph.detectionEventRepository.prune() } ?: 0
+                val incidents = catchingNonCancellation { graph.incidentRepository.prune() } ?: 0
+                if (events + incidents > 0) Log.i(TAG, "Retention: removed $events detection events, $incidents incident rows")
             }
         }
     }
@@ -212,6 +270,7 @@ class SafetyService : LifecycleService(), SafetyControl {
         }
         fused.removeLocationUpdates(locationCallback)
         HeartbeatAlarmReceiver.cancel(this)
+        HeartbeatAlarmReceiver.cancelModeCheck(this)
         engine.stop()
         if (holdLock.isHeld) holdLock.release()
         main.removeCallbacksAndMessages(null)
@@ -227,13 +286,57 @@ class SafetyService : LifecycleService(), SafetyControl {
         main.post { engine.drainNow() }
     }
 
-    private fun onPossibleAccident() {
+    /** Main thread. [t0Nanos] = the candidate's peak (sensor time, the elapsedRealtimeNanos base). */
+    private fun onPossibleAccident(t0Nanos: Long) {
         val nowMs = SystemClock.elapsedRealtime()
-        if (!governor.onCandidate(nowMs)) return
-        Log.i(TAG, "Possible accident: full-rate sensing for ${HOLD_MS / 1000} s")
+        val t0Ms = t0Nanos / 1_000_000L
+        val maxAge = if (mode == Mode.VEHICLE) PossibleAccidentGovernor.VEHICLE_MAX_AGE_MS else PossibleAccidentGovernor.DEFAULT_MAX_AGE_MS
+        val decision = governor.onCandidate(nowMs, t0Ms, maxAge)
+        lastGovernorDecision = "$decision (candidate ${nowMs - t0Ms} ms old)"
+        if (decision != PossibleAccidentGovernor.Decision.ENTER) {
+            if (graph.config.isDebug) Log.d(TAG, "Possible accident not escalated: $lastGovernorDecision")
+            return
+        }
+        Log.i(TAG, "Possible accident: full-rate sensing until the verdict (at most ${HOLD_MS / 1000} s)")
         holdLock.acquire(HOLD_MS + 5_000)
         replan("possible accident")
-        main.postDelayed({ replan("possible-accident hold ended") }, HOLD_MS + 100)
+        main.removeCallbacks(holdEnded)
+        main.postDelayed(holdEnded, HOLD_MS + 100)
+    }
+
+    private val holdEnded = Runnable { endHold("possible-accident hold ended") }
+
+    /** The detector delivered its verdict and nothing is pending: the high rate is no longer needed. */
+    private fun onCandidatesSettled(emitted: Boolean) {
+        if (emitted) return // an accident: the countdown's own alert tier takes over; the hold just runs out
+        if (!governor.isHolding(SystemClock.elapsedRealtime())) return
+        main.removeCallbacks(holdEnded)
+        endHold("candidate rejected")
+    }
+
+    private fun endHold(why: String) {
+        governor.endHold(SystemClock.elapsedRealtime())
+        if (holdLock.isHeld) holdLock.release()
+        replan(why)
+    }
+
+    /** STILL tier only: the phone started moving. Drained already; leave STILL sensing for a while. */
+    private fun onSignificantMotion() {
+        Log.i(TAG, "Significant motion: walking-tier sensing for ${MOTION_HINT_MS / 1000} s")
+        motionHintUntilMs = SystemClock.elapsedRealtime() + MOTION_HINT_MS
+        main.removeCallbacks(motionHintEnded)
+        main.postDelayed(motionHintEnded, MOTION_HINT_MS + 100)
+        updateMode("significant motion")
+        replan("significant motion")
+    }
+
+    private val motionHintEnded = Runnable { replan("motion hint over") }
+
+    private fun motionHintActive(): Boolean = SystemClock.elapsedRealtime() < motionHintUntilMs
+
+    private fun onSensorStillness(still: Boolean) {
+        modes.onSensorStill(still)
+        updateMode(if (still) "sensors: still" else "sensors: moving")
     }
 
     private fun onAlertState(state: AlertState) {
@@ -251,31 +354,56 @@ class SafetyService : LifecycleService(), SafetyControl {
     private fun updateMode(why: String) {
         val (m, source) = modes.resolve(graph.time.nowMillis())
         modeSource = source
+        updateModeCheckAlarm()
         if (m == mode) return
         Log.i(TAG, "Mode $mode → $m ($source, $why)")
         mode = m
         engine.setMode(m)
         replan("mode $m")
         refreshNotification()
-        updateKeepAliveAlarm()
     }
 
     private fun isAlerting(): Boolean = alertSensing || governor.isHolding(SystemClock.elapsedRealtime())
 
+    /** The mode the sensing tier follows: STILL counts as moving for a while after significant motion. */
+    private fun sensingMode(): Mode = if (mode == Mode.STILL && motionHintActive()) Mode.UNKNOWN else mode
+
     private fun sensingPlan(): SensingConfig = SensingPlans.sensing(
-        mode = mode,
+        mode = sensingMode(),
         alerting = isAlerting(),
         batterySaver = batterySaver,
         hasGyro = engine.pipeline.hasGyro,
         hasPressure = engine.pipeline.hasPressure,
     )
 
+    /**
+     * Location: 1 s while a possible accident is held or an alert counts down / is sent; 5 s while a sent alert's
+     * live updates run (pushed every 15 s); the mode's plan otherwise, also for an alert without a live session.
+     */
+    private fun wantedLocationPlan(): LocationPlan {
+        val mode = sensingMode()
+        val alerting = isAlerting()
+        val live = alertActive && !alertSensing
+        val now = SystemClock.elapsedRealtime()
+        walkingFixes.setActive(SensingPlans.usesWalkingFixes(mode) && !alerting && !live, now)
+        return SensingPlans.location(mode, alerting, batterySaver, live, gnss = walkingFixes.wantsGnss(now))
+    }
+
     private fun replan(why: String) {
         if (!begun) return
         engine.applySensing(sensingPlan())
         applyLocation()
         if (isAlerting()) engine.drainNow()
+        updateKeepAliveAlarm()
         Log.d(TAG, "Replanned ($why): ${sensingPlan().tier}, location every ${locationPlan?.intervalMs ?: 0} ms")
+    }
+
+    /** Holds and hints end on uptime timers, which stall while the CPU sleeps: re-check on every tick. */
+    private fun replanIfStale() {
+        if (!begun) return
+        val sensingStale = engine.pipeline.config?.let { it != sensingPlan() } ?: false
+        val locationStale = hasLocationPermission(this) && locationPlan != wantedLocationPlan()
+        if (sensingStale || locationStale) replan("tick")
     }
 
     @SuppressLint("MissingPermission") // FgsTypes / hasLocationPermission checked first
@@ -286,7 +414,7 @@ class SafetyService : LifecycleService(), SafetyControl {
             locationError = "no location permission"
             return
         }
-        val plan = SensingPlans.location(mode, alerting = alertActive || isAlerting(), batterySaver = batterySaver)
+        val plan = wantedLocationPlan()
         if (plan == locationPlan) return
         val request = LocationRequest.Builder(plan.priority, plan.intervalMs)
             .setMinUpdateIntervalMillis(plan.minIntervalMs)
@@ -306,7 +434,9 @@ class SafetyService : LifecycleService(), SafetyControl {
     }
 
     private fun onLocations(result: LocationResult) {
-        engine.drainNow() // the location wake-up paces sensor FIFO drains (screen off)
+        // Signed out explicitly (disarmed, stop pending): record nothing more for the account that just left.
+        if (!ProtectionPrefs.isArmed(this)) return
+        drainForLocation()
         val alerting = alertActive || isAlerting()
         for (location in result.locations) {
             if (location.isMockFix && !graph.config.isDebug) continue
@@ -314,6 +444,7 @@ class SafetyService : LifecycleService(), SafetyControl {
             modes.onSpeed(if (location.hasSpeed()) location.speed else null, graph.time.nowMillis())
             if (location.hasSpeed() && location.elapsedRealtimeNanos > 0) engine.onSpeed(location.speed, location.elapsedRealtimeNanos)
             val point = location.toTrailPoint(mode.toActivity())
+            walkingFixes.onFix(SystemClock.elapsedRealtime(), point.accuracyM)
             lastFix = point
             val policy = if (alerting) TrailSamplingPolicy.ALERTING else TrailSamplingPolicy.forActivity(point.activity)
             lifecycleScope.launch(Dispatchers.IO) {
@@ -322,7 +453,23 @@ class SafetyService : LifecycleService(), SafetyControl {
             }
         }
         updateMode("speed")
+        // Walking fixes good again (or still coarse): switch between balanced and high accuracy right away.
+        if (hasLocationPermission(this) && locationPlan != wantedLocationPlan()) replan("walking fix quality ${walkingFixes.state}")
         sendHeartbeat(force = false)
+    }
+
+    /**
+     * The location wake-up paces sensor FIFO drains while the screen is off, but no more often than the tier
+     * batches (1 s fixes during an alert would otherwise flush and wakelock every second for nothing: the alert
+     * tier is unbatched and its wakelocks keep the CPU up).
+     */
+    private fun drainForLocation() {
+        val cfg = engine.pipeline.config ?: return
+        if (cfg.maxLatencyUs == 0) return
+        val now = SystemClock.elapsedRealtime()
+        if (lastLocationDrainAtMs != Long.MIN_VALUE && now - lastLocationDrainAtMs < cfg.maxLatencyUs / 1_000L) return
+        lastLocationDrainAtMs = now
+        engine.drainNow()
     }
 
     private fun sendHeartbeat(force: Boolean) {
@@ -337,17 +484,54 @@ class SafetyService : LifecycleService(), SafetyControl {
         alerts.forEach { alert ->
             if (ProtectionPrefs.markAlertNotified(this, alert.id, now)) {
                 Log.i(TAG, "Family alert ${alert.kind} from a family member: notifying")
-                ServiceNotifications.showFamilyAlert(this, alert)
+                val phone = catchingNonCancellation { graph.familyPhoneBook.phoneFor(alert.userId, alert.displayName, emptyList()) }
+                ServiceNotifications.showFamilyAlert(this, alert, phone)
             }
         }
     }
 
-    private fun updateKeepAliveAlarm() {
-        if (mode == Mode.STILL) {
-            HeartbeatAlarmReceiver.schedule(this, HeartbeatPolicy().intervalMs(Mode.STILL, batterySaver))
-        } else {
-            HeartbeatAlarmReceiver.cancel(this)
+    /**
+     * The STILL tier has no location wake-ups: the keep-alive alarm drains the accelerometer FIFO at ≤ ½ its depth
+     * (unless a wake-up accelerometer does that by itself) and paces the still heartbeat / family-alert poll.
+     * Null outside the STILL tier.
+     */
+    private fun keepAlivePeriod(): Long? {
+        if (SensingPlans.tierFor(sensingMode(), isAlerting()) != SensingConfig.Tier.STILL) return null
+        // The family-alert poll (2 min) paces the alarm; the 5-min still heartbeat goes out on every few of them.
+        val alertPollMs = HeartbeatPolicy().alertPollIntervalMs(Mode.STILL, batterySaver)
+        return if (engine.pipeline.hasWakeUpAccel) alertPollMs else minOf(alertPollMs, engine.pipeline.stillDrainIntervalMs)
+    }
+
+    /** (Re)schedules the keep-alive alarm; [fired] = it just went off. Leaves a pending alarm alone otherwise. */
+    private fun updateKeepAliveAlarm(fired: Boolean = false) {
+        val period = keepAlivePeriod()
+        if (period == null) {
+            if (keepAliveDueAtMs != Long.MIN_VALUE) {
+                HeartbeatAlarmReceiver.cancel(this)
+                keepAliveDueAtMs = Long.MIN_VALUE
+            }
+            return
         }
+        val now = SystemClock.elapsedRealtime()
+        if (!fired && keepAliveDueAtMs != Long.MIN_VALUE && period == keepAlivePeriodMs && keepAliveDueAtMs > now) return
+        HeartbeatAlarmReceiver.schedule(this, period)
+        keepAliveDueAtMs = now + period
+        keepAlivePeriodMs = period
+    }
+
+    /** While the speed rule holds VEHICLE, an alarm at its staleness deadline (indoors no callback may come). */
+    private fun updateModeCheckAlarm() {
+        val staleAt = if (modeSource == ModeResolver.Source.SPEED) modes.speedStaleAtMs() else null
+        if (staleAt == null) {
+            if (modeCheckAtMs != Long.MIN_VALUE) {
+                HeartbeatAlarmReceiver.cancelModeCheck(this)
+                modeCheckAtMs = Long.MIN_VALUE
+            }
+            return
+        }
+        if (modeCheckAtMs != Long.MIN_VALUE && kotlin.math.abs(staleAt - modeCheckAtMs) < MODE_CHECK_SLACK_MS) return
+        HeartbeatAlarmReceiver.scheduleModeCheck(this, staleAt - graph.time.nowMillis() + 1_000)
+        modeCheckAtMs = staleAt
     }
 
     // ------------------------------------------------------------------ notification
@@ -372,7 +556,7 @@ class SafetyService : LifecycleService(), SafetyControl {
 
     override fun onModeRecognized(mode: Mode) {
         main.post {
-            modes.onRecognized(mode)
+            modes.onRecognized(mode, graph.time.nowMillis())
             updateMode("activity recognition")
         }
     }
@@ -388,21 +572,41 @@ class SafetyService : LifecycleService(), SafetyControl {
 
     override fun inject(request: DetectionEngine.InjectRequest) = engine.inject(request)
 
-    override fun onKeepAliveAlarm(done: () -> Unit) {
-        main.post {
-            val wake = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "eldering:Heartbeat").apply { acquire(10_000) }
-            engine.drainNow()
-            lifecycleScope.launch {
-                try {
-                    val point = lastFix ?: withContext(Dispatchers.IO) { runCatching { graph.trailStore.latest() }.getOrNull() }
-                    heartbeat.maybeSend(point, mode, batterySaver)
-                } finally {
-                    updateKeepAliveAlarm()
-                    if (wake.isHeld) wake.release()
-                    done()
-                }
+    /**
+     * Main thread (alarm receiver). Never ties the broadcast to network I/O: a bounded wakelock covers the drain and
+     * the heartbeat, which runs on [lifecycleScope] (the running foreground service keeps the process alive).
+     */
+    override fun onKeepAliveAlarm() {
+        val wake = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "eldering:Heartbeat").apply {
+            setReferenceCounted(false)
+            acquire(KEEP_ALIVE_WAKE_MS)
+        }
+        engine.drainNow()
+        updateMode("keep-alive")
+        updateKeepAliveAlarm(fired = true)
+        if (keepAliveJob?.isActive == true) {
+            releaseAfterDrain(wake) // the previous heartbeat is still waiting on the network
+            return
+        }
+        keepAliveJob = lifecycleScope.launch {
+            try {
+                val point = lastFix ?: withContext(Dispatchers.IO) { runCatching { graph.trailStore.latest() }.getOrNull() }
+                heartbeat.maybeSend(point, mode, batterySaver)
+            } finally {
+                releaseAfterDrain(wake)
             }
         }
+    }
+
+    /** Releases [wake] behind the drain request on the detector thread, so the CPU stays up until the drain holds its own lock. */
+    private fun releaseAfterDrain(wake: PowerManager.WakeLock) {
+        val posted = engine.handler.post { if (wake.isHeld) wake.release() }
+        if (!posted && wake.isHeld) wake.release()
+    }
+
+    override fun onModeCheckAlarm() {
+        modeCheckAtMs = Long.MIN_VALUE
+        updateMode("speed staleness check")
     }
 
     override suspend fun statusLines(): List<String> {
@@ -419,13 +623,19 @@ class SafetyService : LifecycleService(), SafetyControl {
                 "batterySaver=$batterySaver ignoringBatteryOptimizations=${ServiceNotifications.ignoresBatteryOptimizations(this)} " +
                 "notifications=${ServiceNotifications.canNotify(this)}",
             "mode: $mode source=$modeSource recognized=${modes.recognized ?: "-"} forced=${modes.forced ?: "-"} " +
+                "sensorStill=${engine.sensorStill} motionHint=${motionHintActive()} " +
                 "alerting=${isAlerting()} activityRecognition=${when (arRegistered) { true -> "registered"; false -> "unavailable"; null -> "pending" }}",
+            "governor: last=$lastGovernorDecision holding=${governor.isHolding(SystemClock.elapsedRealtime())} " +
+                "budgetUsed=${governor.usedMs(SystemClock.elapsedRealtime()) / 1000}s " +
+                "keepAlive=${if (keepAliveDueAtMs == Long.MIN_VALUE) "off" else "every ${keepAlivePeriodMs / 1000}s"} " +
+                "modeCheck=${if (modeCheckAtMs == Long.MIN_VALUE) "off" else Instant.ofEpochMilli(modeCheckAtMs).toString()}",
             *engine.statusLines().toTypedArray(),
-            "location: ${plan?.let { "priority=${it.priority} every=${it.intervalMs}ms" } ?: "off"} error=${locationError ?: "-"} " +
+            "location: ${plan?.let { "priority=${it.priority} every=${it.intervalMs}ms" } ?: "off"} walkingFix=${walkingFixes.state} error=${locationError ?: "-"} " +
                 "fixes=${fixes.get()} stored=${stored.get()} lastFix=${lastFix?.let { describe(it, now) } ?: "-"}",
             "trail: size=${trail?.first ?: "?"} latest=${trail?.second?.let { describe(it, now) } ?: "-"}",
             "account: signedIn=$signedIn sharing=${settings?.effectiveSharingState ?: "unknown"} " +
-                "heartbeat=${heartbeat.lastOutcome} last=${heartbeat.last?.let { Instant.ofEpochMilli(it.atMs) } ?: "-"}",
+                "heartbeat=${heartbeat.lastOutcome} last=${heartbeat.last?.let { Instant.ofEpochMilli(it.atMs) } ?: "-"} " +
+                "alertPoll=${heartbeat.lastPollOutcome}",
             "alert: ${alert.javaClass.simpleName}${alert.alert?.let { " ${it.kind} id=${it.id}" } ?: ""} live=${graph.incidentSender.liveIncidents.size}",
         )
     }
@@ -441,6 +651,15 @@ class SafetyService : LifecycleService(), SafetyControl {
         private const val EXTRA_FROM_FOREGROUND = "com.eldering.safety.extra.FROM_FOREGROUND"
         private const val TICK_MS = 30_000L
         private const val HOLD_MS = 30_000L
+
+        /** After significant motion in STILL, walking-tier sensing (location callbacks pace drains) this long. */
+        private const val MOTION_HINT_MS = 2 * 60_000L
+
+        /** Drain + heartbeat after a keep-alive alarm; released as soon as the heartbeat is done. */
+        private const val KEEP_ALIVE_WAKE_MS = 60_000L
+
+        private const val MODE_CHECK_SLACK_MS = 30_000L
+        private const val RETENTION_EVERY_MS = 60 * 60_000L
 
         /**
          * Starts (or refreshes) protection. [fromForeground] = called while one of our activities is visible, which

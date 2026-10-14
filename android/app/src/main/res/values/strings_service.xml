@@ -15,6 +15,7 @@
     <!-- Ongoing protection notification (low-key). -->
     <string name="svc_protection_on">Protection on</string>
     <string name="svc_protection_mode">%s · watching for falls and crashes</string>
+    <string name="svc_alarm_channel_off">Accident alarm notifications are off: tap to turn them on, or the \"Are you OK?\" countdown can\'t reach you</string>
     <string name="svc_protection_signed_out">Not signed in: alerts go to your emergency contacts by SMS only</string>
     <string name="svc_allow_background">Keep running</string>
     <string name="svc_paused_title">Protection paused</string>
@@ -33,4 +34,7 @@
     <!-- Family alert notification (viewer side, from the heartbeat\'s pending_alerts). -->
     <string name="family_notif_public">Family alert</string>
     <string name="family_notif_text">Tap to see where they are and let them know you\'re coming.</string>
+    <string name="family_notif_open">Open</string>
+    <string name="family_notif_call_person">Call %s</string>
+    <string name="family_notif_call_emergency">Call 112</string>
 </resources>

@@ -103,7 +103,11 @@ public class AccidentDetector(
     // Diagnostics for tests (memory bounds).
     internal val bufferedAccelSamples: Int get() = accel.size
     internal val bufferedGyroSamples: Int get() = gyro.size
-    internal val pendingCandidates: Int get() = pending.size
+    /**
+     * Candidates found by the trigger and still waiting for their verdict. The app ends its "possible accident"
+     * high-rate hold once this is back to 0 after a [candidateObserver] call.
+     */
+    public val pendingCandidates: Int get() = pending.size
     internal val contextEntries: Int get() = modes.size + speeds.size
 
     /** Feeds one sensor reading. Non-finite readings and out-of-order timestamps are dropped. */

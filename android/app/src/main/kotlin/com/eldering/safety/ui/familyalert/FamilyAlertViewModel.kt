@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.eldering.safety.core.TimeSource
 import com.eldering.safety.data.repository.ContactsRepository
+import com.eldering.safety.data.repository.FamilyPhoneBook
 import com.eldering.safety.data.repository.IncidentRepository
 import com.eldering.safety.data.repository.LocationRepository
 import com.eldering.safety.network.AckState
@@ -31,8 +32,10 @@ data class FamilyAlertUiState(
     /** Place name of the newest point (sender landmark nearby, or geocoded). */
     val place: String? = null,
     val batteryPct: Int? = null,
-    /** On-device emergency contact with the person's name, to pre-fill "Call". */
+    /** Number for "Call <name>" (picked earlier on this phone, or an emergency contact with that name). */
     val phone: String? = null,
+    /** My account, so "Also alerted" can say "You". */
+    val myUserId: String? = null,
     val acting: Boolean = false,
     val error: UiText? = null,
     /** I tapped "Dad is safe" (handled) in this session. */
@@ -54,6 +57,8 @@ class FamilyAlertViewModel(
     private val placeNamer: PlaceNamer,
     private val time: TimeSource = TimeSource.System,
     private val pollIntervalMs: Long = 15_000L,
+    private val phoneBook: FamilyPhoneBook? = null,
+    private val myUserId: suspend () -> String? = { null },
 ) : ViewModel() {
     private val state = MutableStateFlow(FamilyAlertUiState())
     val uiState: StateFlow<FamilyAlertUiState> = state.asStateFlow()
@@ -74,9 +79,12 @@ class FamilyAlertViewModel(
                 val detail = result.value
                 val trail = TripViewModel.samplesOf(detail)
                 val battery = locations.familyLocations.value.firstOrNull { it.userId == detail.userId }?.batteryPct
-                val phone = contacts.all().firstOrNull { it.name.trim().equals(detail.displayName.trim(), ignoreCase = true) }?.phone
+                val all = contacts.all()
+                val phone = phoneBook?.phoneFor(detail.userId, detail.displayName, all)
+                    ?: all.firstOrNull { it.name.trim().equals(detail.displayName.trim(), ignoreCase = true) }?.phone
+                val me = state.value.myUserId ?: myUserId()
                 state.update {
-                    it.copy(loading = false, detail = detail, trail = trail, batteryPct = battery, phone = phone, error = null)
+                    it.copy(loading = false, detail = detail, trail = trail, batteryPct = battery, phone = phone, myUserId = me, error = null)
                 }
                 acknowledgeSeen(detail)
                 namePlace(trail)
@@ -104,6 +112,13 @@ class FamilyAlertViewModel(
                 if ((r.error as? ApiError.Http)?.isConflict == true) refresh() else state.update { it.copy(error = messageFor(r.error)) }
             }
         }
+    }
+
+    /** "Call <name>" had no number: the user picked one from their contacts; keep it on this phone. */
+    fun rememberPhone(phone: String) {
+        val userId = state.value.detail?.userId ?: return
+        val saved = phoneBook?.remember(userId, phone) ?: phone
+        state.update { it.copy(phone = saved) }
     }
 
     fun dismissError() = state.update { it.copy(error = null) }

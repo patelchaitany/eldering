@@ -58,7 +58,8 @@ import org.robolectric.annotation.Config
  *
  *     ELDERING_LIVE_API_URL=http://127.0.0.1:8095 ./gradlew :app:testDebugUnitTest --tests '*LiveServerContractTest'
  *
- * Creates two throwaway accounts named like the server's e2e suite (`e2e-android-<random>@example.test`).
+ * Creates two throwaway accounts named like the server's e2e suite (`e2e-android-<random>@example.test`);
+ * `make e2e-clean` in `server/` (or `server/e2e/cleanup.sql`) deletes them with their family.
  * Uses only test values; never point it at a server with real users unless that is intended.
  */
 @RunWith(AndroidJUnit4::class)

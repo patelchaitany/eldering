@@ -47,6 +47,8 @@
     <string name="contacts_error_name_blank">Enter a name</string>
     <string name="contacts_error_name_long">Use at most 80 characters</string>
     <string name="contacts_error_phone">Enter a valid phone number</string>
+    <string name="contacts_error_country_code">Add the country code, for example +91 98765 43210</string>
+    <string name="contacts_error_emergency_number">Emergency numbers can\'t get automatic texts. Add a person instead; you can always call emergency services from the alert screen.</string>
     <string name="contacts_error_duplicate">This number is already in your list</string>
     <string name="contacts_error_too_many">You can add up to 10 contacts</string>
     <string name="contacts_error_not_found">This contact no longer exists</string>
@@ -63,7 +65,7 @@
     <string name="settings_account">Account</string>
     <string name="settings_sign_out">Sign out</string>
     <string name="settings_sign_out_title">Sign out of Eldering?</string>
-    <string name="settings_sign_out_body">Family alerts stop on this phone until you log in again. Alerts not yet delivered from this phone are discarded.</string>
+    <string name="settings_sign_out_body">Accident protection and family alerts stop on this phone until you log in again. Your last-hour trail, detection history and emergency contacts are deleted from this phone, and alerts not yet delivered are discarded.</string>
     <string name="settings_family">Family</string>
     <string name="settings_family_hint">Members, invites, roles</string>
     <string name="settings_contacts_hint">Who gets an SMS in an emergency</string>

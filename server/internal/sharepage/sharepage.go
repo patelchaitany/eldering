@@ -207,6 +207,9 @@ func (h *Handler) load(r *http.Request) (*Data, error) {
 	if d.Trail == nil {
 		d.Trail = []Point{}
 	}
+	if d.IncidentLocation != nil {
+		d.IncidentLocation.AccuracyM = incidentAccuracy(d.IncidentLocation, d.Trail)
+	}
 	if n := len(d.Trail); n > 0 {
 		last := d.Trail[n-1]
 		d.Latest = &Point{Lat: last.Lat, Lng: last.Lng, RecordedAt: last.RecordedAt, AccuracyM: last.AccuracyM}
@@ -214,6 +217,32 @@ func (h *Handler) load(r *http.Request) (*Data, error) {
 		d.Latest = d.IncidentLocation
 	}
 	return &d, nil
+}
+
+// incidentAccuracy returns the accuracy of the incident location. POST
+// /v1/incidents carries no accuracy for the incident point itself, but clients
+// (the Android app) send the trail fix it was taken from, so the accuracy is
+// that of the trail point at exactly the same coordinates closest in time to
+// the detection. Nil (JSON null) means unknown, e.g. an incident created with
+// lat/lng only.
+func incidentAccuracy(loc *Point, trail []Point) *float32 {
+	var best *Point
+	var bestGap time.Duration
+	for i := range trail {
+		p := &trail[i]
+		if p.AccuracyM == nil || p.Lat != loc.Lat || p.Lng != loc.Lng {
+			continue
+		}
+		gap := p.RecordedAt.Sub(loc.RecordedAt).Abs()
+		if best == nil || gap < bestGap {
+			best, bestGap = p, gap
+		}
+	}
+	if best == nil {
+		return nil
+	}
+	acc := *best.AccuracyM
+	return &acc
 }
 
 func publicHeaders(w http.ResponseWriter) {

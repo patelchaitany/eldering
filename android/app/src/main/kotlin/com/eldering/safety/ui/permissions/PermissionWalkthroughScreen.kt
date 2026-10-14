@@ -129,6 +129,8 @@ fun PermissionsRoute(
         val permissions = PermissionPlan.runtimePermissions(step, Build.VERSION.SDK_INT)
         when {
             step in blocked -> ExternalIntents.openAppDetails(context)
+            // Permission granted but notifications (or just the accident alarm channel) switched off in Settings.
+            step == PermissionStep.NOTIFICATIONS && permissions.all(checker::isGranted) -> ExternalIntents.openAlarmChannelSettings(context)
             permissions.isNotEmpty() -> {
                 pending = step
                 launcher.launch(permissions.toTypedArray())

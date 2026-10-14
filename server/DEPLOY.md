@@ -101,13 +101,15 @@ E2E_PSQL="ssh -i $ELDERING_SSH_KEY $ELDERING_HOST 'cd ~/eldering-safety && docke
 are rolled back) and the share-link expiry check. Do not pass `E2E_JWT_SECRET` for production:
 it would mean copying the server's secret off the box.
 
-Then delete the throwaway accounts and their families, and confirm none are left:
+Then delete the throwaway accounts and their families, and confirm none are left. `cleanup.sql`
+removes every `e2e-*@example.test` account, so it also covers the Android
+`LiveServerContractTest` accounts (`e2e-android-*`) and any ad-hoc test accounts named that way:
 
 ```sh
 ssh -i "$ELDERING_SSH_KEY" "$ELDERING_HOST" \
   'cd ~/eldering-safety && docker compose -p eldering exec -T db psql -X -q -v ON_ERROR_STOP=1 -U postgres -d eldering' < e2e/cleanup.sql
 ssh -i "$ELDERING_SSH_KEY" "$ELDERING_HOST" \
-  "cd ~/eldering-safety && docker compose -p eldering exec -T db psql -X -tA -U postgres -d eldering -c \"select count(*) from users where email like 'e2e-sec-%@example.test'\""
+  "cd ~/eldering-safety && docker compose -p eldering exec -T db psql -X -tA -U postgres -d eldering -c \"select count(*) from users where email like 'e2e-%@example.test'\""
 ```
 
 ## 6. Rollback

@@ -36,6 +36,7 @@ data class MyFix(
     val accuracyM: Float?,
     val recordedAtMs: Long,
     val activity: Activity?,
+    val speedMps: Float? = null,
 )
 
 fun interface MyLocationSource {
@@ -131,13 +132,13 @@ class DeviceMyLocation(
     override suspend fun lastKnown(): MyFix? {
         val now = time.nowMillis()
         trailStore.latest()?.takeIf { now - it.recordedAtMs <= FRESH_MS }?.let {
-            return MyFix(it.lat, it.lng, it.accuracyM, it.recordedAtMs, it.activity)
+            return MyFix(it.lat, it.lng, it.accuracyM, it.recordedAtMs, it.activity, it.speedMps)
         }
         if (!hasLocationPermission(context)) return null
         return try {
             @SuppressLint("MissingPermission")
             val location = LocationServices.getFusedLocationProviderClient(context).lastLocation.await()
-            location?.let { MyFix(it.latitude, it.longitude, if (it.hasAccuracy()) it.accuracy else null, it.time, null) }
+            location?.let { MyFix(it.latitude, it.longitude, if (it.hasAccuracy()) it.accuracy else null, it.time, null, if (it.hasSpeed()) it.speed else null) }
         } catch (e: SecurityException) {
             null
         } catch (e: Exception) { // Play services missing or the task failed: no position is fine here

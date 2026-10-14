@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.eldering.detection.DetectionEvent
 import com.eldering.detection.EventKind
 import com.eldering.detection.Mode
+import com.eldering.safety.alert.EmergencyNumbers
 import com.eldering.safety.data.db.DetectionOutcome
 import com.eldering.safety.data.db.ElderingDatabase
 import com.eldering.safety.data.db.FeedbackLabel
@@ -69,13 +70,14 @@ class RepositoriesTest {
     private lateinit var families: FamilyRepository
     private lateinit var sharing: SharingRepository
     private lateinit var location: LocationRepository
+    private lateinit var api: com.eldering.safety.network.ElderingApi
 
     @Before
     fun setUp() {
         server.start()
         db = inMemoryDatabase()
         sessions = SessionStore(testDataStore(tmp.root, scope), testCipher())
-        val api = ElderingNetwork(server.url("/").toString(), sessions, time).api
+        api = ElderingNetwork(server.url("/").toString(), sessions, time).api
         auth = AuthRepository(api, sessions, meStore, time, onAccountDataDiscarded = { discarded += it })
         families = FamilyRepository(api, meStore, sessions)
         sharing = SharingRepository(api, meStore)
@@ -127,6 +129,57 @@ class RepositoriesTest {
         auth.logout()
         assertNull(sessions.current())
         assertNull(meStore.me.value)
+    }
+
+    @Test
+    fun `sign-out stops protection, then wipes the phone's personal data`() = runBlocking {
+        // E2E: after sign-out the trail, detection log and contacts stayed, and the service kept recording.
+        val events = mutableListOf<String>()
+        val a = AuthRepository(
+            api, sessions, meStore, time,
+            onAccountDataDiscarded = { events += "account:$it" },
+            onDeviceDataDiscarded = { events += "device" },
+            onSignedOut = { events += "stop-protection" },
+        )
+        server.enqueue(json(200, authJson("access-1", "refresh-1")))
+        a.login("asha@example.com", "pw").getOrThrow()
+        takeRequest()
+        assertEquals("first account on a fresh phone: whatever nobody owned is dropped", listOf("device"), events)
+        assertEquals(USER_ID, sessions.dataOwner())
+
+        events.clear()
+        server.enqueue(noContent())
+        a.logout()
+        assertEquals(listOf("stop-protection", "account:$USER_ID", "device"), events)
+        assertNull(sessions.dataOwner())
+    }
+
+    @Test
+    fun `an expired session keeps the data for the same account, never for another one`() = runBlocking {
+        val events = mutableListOf<String>()
+        val a = AuthRepository(
+            api, sessions, meStore, time,
+            onAccountDataDiscarded = { events += "account:$it" },
+            onDeviceDataDiscarded = { events += "device" },
+            onSignedOut = { events += "stop-protection" },
+        )
+        server.enqueue(json(200, authJson("access-1", "refresh-1")))
+        a.login("asha@example.com", "pw").getOrThrow()
+        takeRequest()
+        events.clear()
+
+        sessions.clear() // the refresh token was rejected: signed out, but not by the user
+        server.enqueue(json(200, authJson("access-2", "refresh-2")))
+        a.login("asha@example.com", "pw").getOrThrow()
+        takeRequest()
+        assertEquals("same account again: its trail stays", emptyList<String>(), events)
+
+        sessions.clear()
+        server.enqueue(json(200, authJson("access-x", "refresh-x", userId = OTHER_USER_ID)))
+        a.login("ravi@example.com", "pw").getOrThrow()
+        assertEquals("another account: the previous one's last hour must not ride along", listOf("account:$USER_ID", "device"), events)
+        assertEquals(OTHER_USER_ID, sessions.dataOwner())
+        assertTrue("no explicit sign-out happened", "stop-protection" !in events)
     }
 
     @Test
@@ -238,7 +291,7 @@ class RepositoriesTest {
 
         assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.DUPLICATE_PHONE), contacts.add("Mum again", "+491512345678"))
         assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.PHONE_INVALID), contacts.add("X", "call me"))
-        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.NAME_BLANK), contacts.add("  ", "112233"))
+        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.NAME_BLANK), contacts.add("  ", "+49112233445"))
 
         contacts.update(dad.copy(smsEnabled = false))
         assertEquals(listOf("Mom"), contacts.smsRecipients().map { it.name })
@@ -248,6 +301,53 @@ class RepositoriesTest {
 
         assertTrue(contacts.remove(dad.id))
         assertEquals(listOf("Mom"), contacts.all().map { it.name })
+    }
+
+    @Test
+    fun `emergency services are never saved as SMS contacts`() = runBlocking {
+        val contacts = ContactsRepository(db.emergencyContactDao(), time)
+        for (number in listOf("112", "911", "999", "000", "+112", "1-1-2", "110", "119", "100", "101", "102", "108")) {
+            assertEquals(number, ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.EMERGENCY_NUMBER), contacts.add("Emergency", number))
+        }
+        val friend = (contacts.add("Friend", "+15550100001") as ContactsRepository.SaveResult.Saved).contact
+        assertEquals(
+            ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.EMERGENCY_NUMBER),
+            contacts.update(friend.copy(phone = "911")),
+        )
+        // The platform check (SIM / network list) is consulted too.
+        val withPlatform = ContactsRepository(db.emergencyContactDao(), time, isEmergencyNumber = { it == "+15550100099" })
+        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.EMERGENCY_NUMBER), withPlatform.add("Local", "+15550100099"))
+        // One saved by an older version is never texted.
+        db.emergencyContactDao().insert(friend.copy(id = 0, name = "Old", phone = "112", position = 9))
+        assertEquals(listOf("Friend"), contacts.smsRecipients().map { it.name })
+        assertTrue(EmergencyNumbers.isStaticEmergencyNumber("112"))
+        assertFalse(EmergencyNumbers.isStaticEmergencyNumber("+911234567890"))
+    }
+
+    @Test
+    fun `emergency contacts need the country code - national numbers are converted or refused`() = runBlocking {
+        // E2E: "5550100" was accepted although the hint asks for the country code.
+        val strict = ContactsRepository(db.emergencyContactDao(), time)
+        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.PHONE_NO_COUNTRY_CODE), strict.add("Neighbour", "5550100"))
+        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.PHONE_NO_COUNTRY_CODE), strict.add("Neighbour", "098000 00210"))
+        assertEquals(ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.PHONE_NO_COUNTRY_CODE), strict.add("Short", "+1234"))
+        // On the phone a national number is converted with the SIM's country (DevicePhoneNumbers).
+        val withSim = ContactsRepository(
+            db.emergencyContactDao(), time,
+            toInternational = { n -> PhoneNumbers.international(n) ?: if (n == "09800000210") "+919800000210" else null },
+        )
+        val saved = withSim.add("Neighbour", "098000 00210") as ContactsRepository.SaveResult.Saved
+        assertEquals("+919800000210", saved.contact.phone)
+        // A number saved before the rule (no country code) can still be renamed or muted without retyping it.
+        val legacy = saved.contact.copy(id = 0, name = "Legacy", phone = "5550100", position = 5)
+        val legacyId = db.emergencyContactDao().insert(legacy)
+        assertTrue(strict.update(legacy.copy(id = legacyId, smsEnabled = false)) is ContactsRepository.SaveResult.Saved)
+        assertEquals(
+            ContactsRepository.SaveResult.Invalid(ContactsRepository.Problem.PHONE_NO_COUNTRY_CODE),
+            strict.update(legacy.copy(id = legacyId, phone = "5550199")),
+        )
+        assertEquals("+4915112345678", PhoneNumbers.international("+4915112345678"))
+        assertNull(PhoneNumbers.international("015112345678"))
     }
 
     @Test

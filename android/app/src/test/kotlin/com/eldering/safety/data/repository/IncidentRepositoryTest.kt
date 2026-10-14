@@ -121,7 +121,7 @@ class IncidentRepositoryTest {
         assertEquals(INCIDENT_ID, own.serverId)
         assertEquals(USER_ID, own.userId)
         assertEquals(0, db.outboxDao().pendingCount(USER_ID))
-        assertEquals(0, scheduled.get())
+        assertEquals("delivery is scheduled before the inline attempt (process death safety)", 1, scheduled.get())
     }
 
     @Test
@@ -197,11 +197,12 @@ class IncidentRepositoryTest {
         takeRequest()
 
         server.enqueue(errorJson(409, "incident_closed"))
+        val before = scheduled.get()
         repo.appendTrail(sent.incidentKey, listOf(point(FakeTime.T0)))
 
         assertEquals("/v1/incidents/$INCIDENT_ID/trail", takeRequest().url.encodedPath)
         assertEquals(0, db.outboxDao().pendingCount(USER_ID))
-        assertEquals(0, scheduled.get())
+        assertEquals("nothing left to retry", before, scheduled.get())
         // Closed locally as well, so live updates stop (appendTrail reports the incident is over).
         assertEquals(OwnIncidentStatus.RESOLVED, repo.ownIncident(sent.incidentKey)!!.status)
         assertFalse(repo.appendTrail(sent.incidentKey, listOf(point(FakeTime.T0 + 1_000))))
@@ -218,7 +219,7 @@ class IncidentRepositoryTest {
         assertEquals(OwnIncidentStatus.FAILED, repo.ownIncident(result.incidentKey)!!.status)
         assertEquals(0, db.outboxDao().pendingCount(USER_ID))
         assertEquals(OutboxState.FAILED, db.outboxDao().get(1)!!.state)
-        assertEquals(0, scheduled.get())
+        assertEquals("a failed row keeps no trail", "{}", db.outboxDao().get(1)!!.payloadJson)
     }
 
     @Test
@@ -262,6 +263,67 @@ class IncidentRepositoryTest {
         repo.discardAccountData(USER_ID)
         assertEquals(0, db.outboxDao().pendingCount(USER_ID))
         assertNull(repo.ownIncident("incident-key-1"))
+    }
+
+    @Test
+    fun `reporting the same alert key again (a send resumed after a restart) creates no second incident`() = runBlocking {
+        server.enqueue(errorJson(503, "unavailable"))
+        val first = repo.report(draft(), incidentKey = "alert-1") as IncidentRepository.ReportResult.Queued
+        takeRequest()
+        assertEquals("alert-1", first.incidentKey)
+
+        server.enqueue(json(201, ServerSamples.CREATE_INCIDENT))
+        val again = repo.report(draft(), incidentKey = "alert-1") as IncidentRepository.ReportResult.Sent
+        assertEquals("alert-1", again.incidentKey)
+        assertEquals("alert-1", takeRequest().headers["Idempotency-Key"])
+        assertEquals(0, db.outboxDao().pendingCount(USER_ID))
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `a row stored but never scheduled is rescued by scheduleIfPending`() = runBlocking {
+        // State after a process death between storing the alert and scheduling its delivery.
+        db.ownIncidentDao().insert(OwnIncident("k", USER_ID, kind = "fall", detectedAtMs = detectedAt, lat = null, lng = null, createdAtMs = detectedAt, updatedAtMs = detectedAt))
+        db.outboxDao().insert(OutboxItem(type = OutboxType.CREATE_INCIDENT, incidentKey = "k", userId = USER_ID, payloadJson = "{}", createdAtMs = detectedAt))
+
+        assertTrue(repo.scheduleIfPending())
+        assertEquals(1, scheduled.get())
+
+        db.outboxDao().deleteForIncident("k")
+        assertFalse("nothing pending, nothing scheduled", repo.scheduleIfPending())
+        assertEquals(1, scheduled.get())
+    }
+
+    @Test
+    fun `an expired upload drops its trail payload`() = runBlocking {
+        server.enqueue(errorJson(503, "unavailable"))
+        repo.report(draft(trailPoints = 30))
+        takeRequest()
+        time.advance(OutboxProcessor.MAX_ITEM_AGE_MS + 1)
+        repo.retryPending()
+        val row = db.outboxDao().get(1)!!
+        assertEquals(OutboxState.FAILED, row.state)
+        assertEquals("{}", row.payloadJson)
+    }
+
+    @Test
+    fun `retention removes closed incidents after a week and never-closed ones after the share link is long gone`() = runBlocking {
+        val dao = db.ownIncidentDao()
+        fun own(key: String, detected: Long) = OwnIncident(key, USER_ID, kind = "fall", detectedAtMs = detected, lat = 1.0, lng = 2.0, createdAtMs = detected, updatedAtMs = detected)
+        dao.insert(own("closed-old", FakeTime.T0 - 8 * 86_400_000L))
+        dao.setStatus("closed-old", OwnIncidentStatus.RESOLVED, "user_ok", FakeTime.T0 - 8 * 86_400_000L)
+        dao.insert(own("closed-new", FakeTime.T0 - 86_400_000L))
+        dao.setStatus("closed-new", OwnIncidentStatus.RESOLVED, "user_ok", FakeTime.T0 - 86_400_000L)
+        dao.insert(own("active-stale", FakeTime.T0 - 11 * 86_400_000L))
+        dao.setStatus("active-stale", OwnIncidentStatus.ACTIVE, null, FakeTime.T0 - 11 * 86_400_000L)
+        dao.insert(own("active-recent", FakeTime.T0 - 2 * 86_400_000L))
+        dao.setStatus("active-recent", OwnIncidentStatus.ACTIVE, null, FakeTime.T0 - 2 * 86_400_000L)
+
+        assertEquals(2, repo.prune())
+        assertNull(repo.ownIncident("closed-old"))
+        assertNull(repo.ownIncident("active-stale"))
+        assertEquals(OwnIncidentStatus.RESOLVED, repo.ownIncident("closed-new")!!.status)
+        assertEquals(OwnIncidentStatus.ACTIVE, repo.ownIncident("active-recent")!!.status)
     }
 
     @Test

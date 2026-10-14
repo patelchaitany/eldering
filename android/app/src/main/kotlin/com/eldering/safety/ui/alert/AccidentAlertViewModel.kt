@@ -130,8 +130,11 @@ class AccidentAlertViewModel(
     companion object {
         /** Before the pipeline reports anything: one line per planned recipient, all "Sending…". */
         fun plannedDeliveries(info: AccidentAlertInfo): List<DeliveryLine> = buildList {
-            info.familyRecipients.forEach { add(DeliveryLine(UiText.res(R.string.alert_delivery_app, it), DeliveryState.SENDING)) }
-            if (info.familyRecipients.isEmpty()) add(DeliveryLine(UiText.res(R.string.alert_delivery_family_app), DeliveryState.SENDING))
+            if (info.familyRecipients.isEmpty()) {
+                add(DeliveryLine(UiText.res(R.string.alert_delivery_family_app), DeliveryState.SENDING))
+            } else {
+                add(DeliveryLine(UiText.res(R.string.alert_delivery_app, info.familyRecipients.joinToString(", ")), DeliveryState.SENDING))
+            }
             if (info.emergencyContactCount > 0) {
                 add(
                     DeliveryLine(
